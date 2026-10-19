@@ -116,6 +116,8 @@ class MainActivity : ComponentActivity() {
     private var showResetSettings by mutableStateOf(false)
     private var lowSpace by mutableStateOf<Long?>(null)
     private var showNonAdreno by mutableStateOf<LinuxRuntimeInstaller.Release?>(null)
+    /** A Mali with no Linux runtime driver: a session would end at once, so it is said before the start. */
+    private var showMaliNoDriver by mutableStateOf(false)
     private var glThread by mutableStateOf(true)
     private var noGlError by mutableStateOf(true)
     private var steamRepairQueued by mutableStateOf(false)
@@ -1106,10 +1108,22 @@ class MainActivity : ComponentActivity() {
                     onClear = { SessionPrefs.setRomsDir(this, ""); romsDir = null; showRoms = false },
                     onDismiss = { showRoms = false },
                 )
+                if (showMaliNoDriver) ConfirmDialog(
+                    title = androidx.compose.ui.res.stringResource(R.string.mali_no_driver_title),
+                    text = androidx.compose.ui.res.stringResource(
+                        R.string.mali_no_driver_text, com.droiddeck.launcher.gpu.GpuInfo.detect().name,
+                    ),
+                    confirm = androidx.compose.ui.res.stringResource(R.string.mali_no_driver_confirm),
+                    onConfirm = { showMaliNoDriver = false; openComponents(focusContent = true, tab = com.droiddeck.launcher.ui.GPU_TAB) },
+                    onDismiss = { showMaliNoDriver = false },
+                )
                 showNonAdreno?.let { release ->
+                    val mali = com.droiddeck.launcher.core.DeviceSupport.mali()
                     ConfirmDialog(
-                        title = androidx.compose.ui.res.stringResource(R.string.main_non_adreno_title),
-                        text = androidx.compose.ui.res.stringResource(R.string.main_non_adreno_text, com.droiddeck.launcher.core.DeviceSupport.gpuName(this@MainActivity), release.size / 1e6),
+                        title = if (mali) androidx.compose.ui.res.stringResource(R.string.main_mali_title)
+                            else androidx.compose.ui.res.stringResource(R.string.main_non_adreno_title),
+                        text = if (mali) androidx.compose.ui.res.stringResource(R.string.main_mali_text, release.size / 1e6)
+                            else androidx.compose.ui.res.stringResource(R.string.main_non_adreno_text, com.droiddeck.launcher.core.DeviceSupport.gpuName(this@MainActivity), release.size / 1e6),
                         confirm = androidx.compose.ui.res.stringResource(R.string.main_install_anyway),
                         onConfirm = { showNonAdreno = null; install(release) },
                         onDismiss = { showNonAdreno = null },
@@ -2004,6 +2018,11 @@ class MainActivity : ComponentActivity() {
         }
         val warn = installed == null && !com.droiddeck.launcher.core.DeviceSupport.adreno()
         if (warn && available != null) { showNonAdreno = available; return false }
+        if (installed != null && com.droiddeck.launcher.core.DeviceSupport.mali() &&
+            com.droiddeck.launcher.gpu.LinuxVulkanDriver.resolveIcdPath(this, SessionPrefs.linuxDriver(this)) == null) {
+            showMaliNoDriver = true
+            return false
+        }
         startActivity(intent)
         return true
     }

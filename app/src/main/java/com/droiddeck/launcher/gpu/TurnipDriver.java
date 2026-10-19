@@ -282,6 +282,10 @@ public final class TurnipDriver {
             if (forced.startsWith("a7")) return DRIVER_A7XX;
             if (forced.startsWith("a6")) return DRIVER_A6XX;
         }
+        if (com.droiddeck.launcher.core.DeviceSupport.mali()) {
+            Log.i(TAG, "Mali GPU: no Turnip runs here, the compositor uses the system Vulkan driver");
+            return null;
+        }
         String quest = QuestExperimental.INSTANCE.defaultAndroidDriver();
         if (quest != null) return quest;
         String model = gpuModel();

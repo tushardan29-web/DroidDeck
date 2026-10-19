@@ -108,6 +108,8 @@ class GpuDriversState(
     val supportText: String = "",
     val supported: Boolean = true,
     val unsupported: Boolean = false,
+    /** A Mali: no Turnip pair fits it, its runtime driver is picked under Advanced. */
+    val mali: Boolean = false,
     val auto: Boolean = true,
     val pairs: List<PairRow> = emptyList(),
     val busy: String? = null,
@@ -347,7 +349,10 @@ private fun PairBody(gpu: GpuDriversState, actions: GpuDriversActions) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         PanelTitle(stringResource(R.string.gpu_pair_title), stringResource(R.string.gpu_pair_hint))
         val rows = gpu.pairs.filter { (it.installed || it.complete) && (it.suits || showAll) }
-        if (rows.isEmpty()) Text(
+        if (gpu.mali) Text(
+            stringResource(R.string.gpu_mali_hint),
+            fontSize = 13.sp, color = colors.onSurfaceVariant,
+        ) else if (rows.isEmpty()) Text(
             stringResource(if (gpu.checking) R.string.gpu_checking else R.string.gpu_none_listed),
             fontSize = 13.sp, color = colors.onSurfaceVariant,
         )

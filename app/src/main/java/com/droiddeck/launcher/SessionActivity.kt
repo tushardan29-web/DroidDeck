@@ -1766,6 +1766,9 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
         return try {
             var enosys = 0
             var fexMissing = false
+            var noGpu = false
+            var turnipRan = false
+            // The tail is where a dying session says why; 512 KB covers the storm without reading a 1 GB log.
             val size = log.length()
             java.io.RandomAccessFile(log, "r").use { f ->
                 val start = maxOf(0L, size - 512L * 1024)
@@ -1775,9 +1778,20 @@ class SessionActivity : ComponentActivity(), SurfaceHolder.Callback {
                 String(bytes, Charsets.ISO_8859_1).lineSequence().forEach { line ->
                     if (line.contains("Function not implemented")) enosys++
                     if (line.contains(FEX_MISSING)) fexMissing = true
+                    if (line.contains("failed to find physical device") || line.contains("VK_ERROR_INCOMPATIBLE_DRIVER")) noGpu = true
+                    if (line.startsWith("TU: ")) turnipRan = true
                 }
             }
-            if (fexMissing) {
+            if (noGpu && com.droiddeck.launcher.core.DeviceSupport.mali()) {
+                EndHint(
+                    when {
+                        com.droiddeck.launcher.gpu.LinuxVulkanDriver.resolveIcdPath(this, SessionPrefs.linuxDriver(this)) == null ->
+                            getString(R.string.session_mali_no_driver)
+                        turnipRan -> getString(R.string.session_mali_turnip)
+                        else -> getString(R.string.session_mali_imported_no_gpu)
+                    },
+                )
+            } else if (fexMissing) {
                 val what = com.droiddeck.launcher.frontend.Library.nameForProgram(SessionState.program) ?: getString(R.string.session_end_program)
                 EndHint(getString(R.string.session_end_fex_missing, what), evenOnSuccess = true)
             } else if (enosys >= 8) {
