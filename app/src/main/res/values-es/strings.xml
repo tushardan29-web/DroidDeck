@@ -30,7 +30,7 @@
     <string name="frame_gen_title">Generación de fotogramas</string>
     <string name="frame_gen_hint">Elige el modo de generación de fotogramas</string>
     <string name="frame_gen_off">Desactivada</string>
-    <string name="frame_gen_winfg">Win-FG %1$d×</string>
+    <string name="frame_gen_ddfg">DD-FG %1$d×</string>
     <string name="frame_gen_lsfg">LSFG %1$d×</string>
     <string name="frame_gen_lsfg_adaptive">LSFG adaptativo %1$d</string>
     <string name="lsfg_needs_steam">Requiere Lossless Scaling en Steam</string>
@@ -1945,7 +1945,6 @@
     <string name="stores_settings_eyebrow">Ajustes</string>
     <string name="stores_chip_signed_out">(sin iniciar sesión)</string>
     <string name="stores_tab_store">Tienda</string>
-    <string name="stores_tab_installed">Instalados</string>
     <string name="stores_tab_library">Biblioteca</string>
     <string name="stores_tab_all">Todos</string>
     <string name="stores_tab_downloads">Descargas</string>
@@ -1957,10 +1956,8 @@
     <string name="stores_signout_stay">Mantener la sesión</string>
     <string name="stores_signout_go">Cerrar sesión</string>
     <string name="stores_search_catalog">Buscar en el catálogo de %1$s…</string>
-    <string name="stores_search_installed">Buscar juegos instalados…</string>
     <string name="stores_search_library">Buscar en tu biblioteca…</string>
     <string name="stores_search_open">Buscar</string>
-    <string name="stores_installed_empty">Nada instalado</string>
     <string name="stores_library_loading">Cargando</string>
     <string name="stores_nothing_matches">No hay juegos</string>
     <string name="stores_shelves_loading">Cargando la tienda…</string>
@@ -1979,6 +1976,8 @@
     <string name="stores_view_on">Ver en %1$s</string>
     <string name="stores_buy_price">Comprar · %1$s</string>
     <string name="stores_installed_chip">Instalado</string>
+    <string name="stores_section_installed">Instalado</string>
+    <string name="stores_section_not_installed">No instalada</string>
     <string name="stores_in_library">En la biblioteca</string>
     <string name="stores_itch_key">Clave de API</string>
     <string name="stores_itch_get_key">Obtener una clave</string>
@@ -2003,6 +2002,7 @@
     <string name="stores_sort_release_date">Fecha de lanzamiento</string>
     <string name="stores_view_list">Vista de lista</string>
     <string name="stores_view_cards">Vista de tarjetas</string>
+    <string name="stores_view_capsules">Vista de portadas</string>
     <string name="stores_show_mature">Mostrar contenido para adultos</string>
     <string name="epic_card_title">Epic</string>
     <string name="epic_card_eos">EOS</string>

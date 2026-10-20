@@ -30,7 +30,7 @@
     <string name="frame_gen_title">Génération d\'images</string>
     <string name="frame_gen_hint">Sélectionnez le mode de génération d\'images à utiliser</string>
     <string name="frame_gen_off">Désactivé</string>
-    <string name="frame_gen_winfg">Win-FG %1$d×</string>
+    <string name="frame_gen_ddfg">DD-FG %1$d×</string>
     <string name="frame_gen_lsfg">LSFG %1$d×</string>
     <string name="frame_gen_lsfg_adaptive">LSFG Adaptatif %1$d</string>
     <string name="lsfg_needs_steam">Nécessite Lossless Scaling sur Steam</string>
@@ -1944,7 +1944,6 @@
     <string name="stores_settings_eyebrow">Paramètres</string>
     <string name="stores_chip_signed_out">(non connecté)</string>
     <string name="stores_tab_store">Boutique</string>
-    <string name="stores_tab_installed">Installés</string>
     <string name="stores_tab_library">Bibliothèque</string>
     <string name="stores_tab_all">Tous</string>
     <string name="stores_tab_downloads">Téléchargements</string>
@@ -1956,10 +1955,8 @@
     <string name="stores_signout_stay">Rester connecté</string>
     <string name="stores_signout_go">Se déconnecter</string>
     <string name="stores_search_catalog">Rechercher dans le catalogue %1$s…</string>
-    <string name="stores_search_installed">Rechercher dans les jeux installés…</string>
     <string name="stores_search_library">Rechercher dans votre bibliothèque…</string>
     <string name="stores_search_open">Rechercher</string>
-    <string name="stores_installed_empty">Aucun jeu installé</string>
     <string name="stores_library_loading">Chargement</string>
     <string name="stores_nothing_matches">Aucun jeu</string>
     <string name="stores_shelves_loading">Chargement de la boutique…</string>
@@ -1978,6 +1975,8 @@
     <string name="stores_view_on">Voir sur %1$s</string>
     <string name="stores_buy_price">Acheter · %1$s</string>
     <string name="stores_installed_chip">Installé</string>
+    <string name="stores_section_installed">Installé</string>
+    <string name="stores_section_not_installed">Non installé</string>
     <string name="stores_in_library">Dans la bibliothèque</string>
     <string name="stores_itch_key">Clé d\'API</string>
     <string name="stores_itch_get_key">Obtenir une clé</string>
@@ -2002,6 +2001,7 @@
     <string name="stores_sort_release_date">Date de sortie</string>
     <string name="stores_view_list">Vue liste</string>
     <string name="stores_view_cards">Vue cartes</string>
+    <string name="stores_view_capsules">Vue jaquettes</string>
     <string name="stores_show_mature">Afficher le contenu pour adultes</string>
     <string name="epic_card_title">Epic</string>
     <string name="epic_card_eos">EOS</string>
