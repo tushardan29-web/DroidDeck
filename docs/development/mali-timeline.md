@@ -73,13 +73,11 @@ what each change is: [mali-fork-changes.md](mali-fork-changes.md).
   — the session only has `renderD33`), then
   `vulkan: vkGetMemoryFdKHR failed (VkResult: -2)` in `vulkan_create_flat_texture`, asserted at
   `rendervulkan.cpp:3199`. **failed at the dma-buf export step** — this is the current blocker.
-- In-progress diagnosis (3.16.29 source, scratch): `vkGetMemoryFdKHR` is only called when
-  `flags.bExportable == true`, yet the flat/cursor texture path constructs with `bExportable =
-  false`. The Arch packaging tag `3.16.29-1` (what the patched-gamescope build clones) is pristine
-  upstream + our patches only, so the export path's trigger is still unexplained. Planned fix
-  either way: gamescope patch 0121 tolerating `VK_ERROR_INITIALIZATION_FAILED` from
-  `vkGetMemoryFdKHR` for these textures, plus extending the syncobj-fd scan to any file in the
-  session's `/dev/dri` (so `renderD33` is found).
+- Root cause found in the 3.16.29 source: `CVulkanTexture::BInit` forces
+  `flags.bExportable = true` whenever `flags.bFlippable` is set, so the flat texture *does* reach
+  `vkGetMemoryFdKHR` regardless of what the constructor passed, and panvk on kbase answers `-2`.
+  Fix written as patch **0130** (keep the texture, skip only the dmabuf and its backend import);
+  the syncobj-fd scan stays as 0120 left it - opening mali0 would answer no DRM ioctls either way.
 
 ## 2026-10-20 · FristOneRR / Panvk-Driver v3.0 analysis
 
@@ -90,17 +88,54 @@ what each change is: [mali-fork-changes.md](mali-fork-changes.md).
   usable here** — kept as reference: their v9 JM backend is the same generation that zen's glibc
   PanVK ports.
 
+## 2026-10-20 · Sessions 11/12/13 (jdmg28's three zips on our build)
+
+- Imported the three release zips of `jdmg28/DroidDeck-Mali` by hand into `0.5.0-mali`:
+  `PanVK-kbase-v0.1.0-rc3_exact_BC_universal`, `PanVK-kbase-v0.1.0-rc3-lowmem_universal`,
+  `Software-Vulkan-lavapipe`. All three reached the loader, each died one step in:
+  - the kits: `loader_scanned_icd_add: … libvulkan_droiddeck_mali.so doesn't support interface
+    version compatible with loader, skip this ICD` - the shim negotiates only after
+    `dlopen(libpanvk_backend.so)` from beside itself, and fails when that file is absent;
+  - lavapipe: `libLLVM.so.19.1: cannot open shared object file`.
+  **failed** with one shared cause: `LinuxVulkanDriverManager.installDriver` kept only
+  `libvulkan_*.so` + `meta.json` from a zip and threw every companion away - the kit's
+  `libpanvk_backend.so`, lavapipe's whole `$ORIGIN` closure. Fixed: import every entry, flattened
+  to its basename (our own `icd.json`/`meta.json` still win).
+
+## 2026-10-20 · jdmg28/DroidDeck-Mali analysed and its fixes incorporated
+
+- Their fork (Mali-G615 on a POCO X6 Pro, Steam Big Picture + Clicker Heroes through DXVK at
+  ~29 fps on screen) runs the same zenithblue `panvk-kbase` and the same upstream app. Its Mali
+  fix is made of: a 67 KB **ICD shim** (`libvulkan_droiddeck_mali.so`, C source inside their kit
+  zip) that proxies the backend ICD and injects `VK_EXT_physical_device_drm` - primary/render set
+  to `/dev/mali0`'s `st_rdev`, **only when the device name says Mali-G615** - against a session
+  binding that exposes mali0 as a render node; the env knobs `PANVK_KBASE_DRI3=0` (present via
+  CPU/SHM WSI; DRI3 present wants dma-buf export from kbase) and `LIBGL_KOPPER_DISABLE=false`;
+  a **Debian trixie lavapipe zip** (mesa 25.0.7 + libLLVM19 + the whole NEEDED closure, every
+  `.so` `patchelf`'d to `$ORIGIN`, CI-verified with the runtime's own loader); and session
+  tunings (dxvk memory caps, fossilize layer off, steamwebhelper with `VK_ICD_FILENAMES=/dev/null`).
+- What it means here: **on Mali-G77 the shim never injects** (its target filter is G615), so it
+  loads as a plain proxy and gamescope keeps depending on our own 0120 - their
+  mali0-as-render-node bind does not need porting. zen's RC3 added the **`jm-v9` series**,
+  validated 38/38 on a Mali-G57 (v9 JM, uAPI 11.38) - this Mali-G77's exact generation - so RC3
+  is expected to draw here, not merely enumerate.
+- Ported into this fork: the importer companion-files fix (above), their mali env block
+  (`PANVK_KBASE_DRI3=0` / `LIBGL_KOPPER_DISABLE=false`) in `SessionService`, gamescope patch
+  **0130** for the export refusal, and the evidence recorded in the options doc. Their five
+  gamescope patches (0002/0009/0019/0020/0112) were already ours - same Armada lineage.
+
 ## Open items
 
-1. **panvk / gamescope export** (current blocker): finish the `CVulkanTexture::BInit` read to find
-   what forces the export path, then gamescope patch 0121 (tolerate `vkGetMemoryFdKHR` -2; scan the
-   session `/dev/dri` for a syncobj fd). Rebuild gamescope → `release.env` → APK.
-2. **lavapipe runtime**: add `libLLVM.so.23.1` (+ NEEDED deps) to the lavapipe zip; prepend the
-   imported driver dir to `LD_LIBRARY_PATH` in `SessionService.kt`. Expect further missing sonames
-   one per run — iterate.
+1. **Re-test the three zips** on the next build (importer fix + mali env + gamescope 0130, new
+   `gamescope-3.16.29-mali-02` release): expected - kits negotiate and gamescope passes the
+   flat-texture step; the next real gate is drawing (jm-v9 on G77) and then Steam itself.
+2. **Own the artifacts**: port their `mali-panvk-driver.yml` and `software-vulkan-driver.yml`
+   workflows so this fork publishes its own kit and lavapipe zips instead of hand-carrying theirs;
+   retire the ALARM-built lavapipe half of `tools/mali/build-driver-zips.sh` (no LLVM closure, no
+   `$ORIGIN` runpath) in their favour.
 3. **Games on panvk**: once a session starts, Proton/DXVK 2.x needs device Vulkan 1.3; PanVK here
    is Vulkan 1.1, so games need DXVK 1.10 (or WineD3D). Separate step.
 4. **Signing**: fork APKs use the repo test key (`versionCode` chain upgrades within the fork;
-  official installs must be uninstalled first). Decide whether to adopt a fork release key.
+   official installs must be uninstalled first). Decide whether to adopt a fork release key.
 5. **ICD `api_version` hardcode** (`1.1.274`): proven cosmetic for loading (the loader does not
    filter on it); DXVK gates on the device version. No change made, on purpose.

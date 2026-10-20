@@ -43,6 +43,7 @@ PanVK ICD** - only a zip the importer already understands.
 | 3 | **Vortek** (`brunodev85/vortek`, LGPL-2.1) | glibc ICD client that proxies over IPC to a bionic server on the *system* Mali driver; emulates BCn textures Mali lacks, patches missing extensions | Deferred. Highest ceiling (DXVK becomes viable) but the server half must be embedded in this app - a separate project |
 | 4 | **VirGL** (Winlator's Mali path) | Guest GL to an Android-side GLES renderer; community result is DX9-era titles only | Deferred: large new component, small payoff |
 | 5 | Turnip / the Mali fork's PanVK | Turnip is Adreno-only; the `panvk-g720-kbase-csf` build is CSF, and G77 is JM | Ruled out |
+| 6 | **`jdmg28/DroidDeck-Mali`** - the G615 fork's whole Mali path | Steam Big Picture, a KDE desktop and DXVK games (Clicker Heroes ~29 fps) photographed running on a Mali-G615 MC6 with the same zenithblue `panvk-kbase` RC3 and the same upstream app; their gamescope is **unpatched** - a 67 KB ICD shim in their kit fakes `VK_EXT_physical_device_drm`, but only for a device name matching "Mali-G615", and their session binds mali0 as a render node | **Pieces adopted**: the importer keeping companion files, `PANVK_KBASE_DRI3=0` + `LIBGL_KOPPER_DISABLE=false`, and the lavapipe recipe (Debian mesa + `libLLVM` + `$ORIGIN` runpaths). Their mali0-as-render-node bind is not ported - on a G77 the shim never fires and our gamescope 0120 covers the gate instead. zen RC3's `jm-v9` series (38/38 on a Mali-G57, v9 JM, uAPI 11.38 - this device's exact generation) is what makes their setup worth copying here |
 
 Decision (2026-10-20): build **1**, then test **2**; **3** and **4** only if both fail
 the device test.
@@ -52,6 +53,12 @@ the device test.
 * any entry whose **basename** starts with `libvulkan_` and ends in `.so` - one only.
 * aarch64 ELF, with the ASCII string `libc.so.6` (the glibc check).
 * optional `meta.json` (any path): `name`, `driverVersion`, `minGlibc`, `kind`.
+* **every other entry is kept** beside the driver, flattened to its basename - a second
+  library the ICD `dlopen`s (`libpanvk_backend.so` in the Mali kit) or a `$ORIGIN`
+  closure (`libLLVM.so.19.1` and friends in a lavapipe zip). The zip's own
+  `icd.json`/`meta.json` are the exceptions: the importer writes both itself. Until
+  2026-10-20 the importer silently dropped everything else, which is why sessions
+  11/12/13 could not load either kind of zip.
 * The importer keeps the library's own name when it matches
   `libvulkan_[A-Za-z0-9_]+\.so`. Hyphens fail that pattern - `libvulkan_panfrost-
   glibc-aarch64.so` would be renamed to `libvulkan_freedreno.so` - so the file is
@@ -74,3 +81,10 @@ Both were also copied to `/storage/emulated/0/Download/` for the in-app picker. 
 either under **GPU drivers > Linux runtime driver**, leave the display driver on Auto,
 and pick it in the same tab's runtime row. The FristOneRR zip is deliberately absent -
 it is bionic, and the importer rejects anything that does not link glibc.
+
+The ALARM-built lavapipe zip is **superseded for real use** by
+`DroidDeck-Software-Vulkan-lavapipe.zip` from `jdmg28/DroidDeck-Mali`'s releases: theirs
+bundles Debian's mesa 25.0.7 with `libLLVM.so.19.1` and its whole NEEDED closure, every
+`.so` `patchelf`'d to `$ORIGIN`, and was CI-verified with the runtime's own loader -
+ours has no LLVM and no runpath. The kits (`DroidDeck-Mali-CSF-PanVK-kbase-*.zip`,
+`…-rc3-exactBC-universal`) come from the same releases.
