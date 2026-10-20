@@ -54,7 +54,7 @@ is marked *(inherited)*; its history is the [changelog](../releases/mali-fork.md
   backend import are skipped; pipewire capture (`n_planes != 1` errors out) and a null backend fb
   already tolerate that.
 - `tools/gamescope/release.env` — now pins this fork's own patched build,
-  `tushardan29-web/DroidDeck` release `gamescope-3.16.29-mali-01` (sha256 `51f2106e…`), instead of
+  `tushardan29-web/DroidDeck` release `gamescope-3.16.29-mali-02` (sha256 `e3c08083…`), instead of
   upstream's `Droid-Deck/DroidDeck-Components` `gamescope-3.16.29-cursor-…` release. The APK's
   packaging fetches gamescope from this file, so the patch is live in every fork build.
 
