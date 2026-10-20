@@ -6,14 +6,14 @@
 </p>
 
 > [!NOTE]
-> **This fork of [DroidDeck](https://github.com/Droid-Deck/DroidDeck) carries the MediaTek / Arm Mali changes** from `mediatek-mali-support`. They are experimental, unofficial, and tested on one phone: a POCO X8 Pro (Dimensity, Mali-G720 MC8).
+> **This fork of [DroidDeck](https://github.com/Droid-Deck/DroidDeck) carries the MediaTek / Arm Mali changes**, inherited from `emir34-34/mediatek-mali-support` and continued here. They are experimental, unofficial, and tested on one phone: a realme RMX3031 (Dimensity 1200, **Mali-G77 MC9**, Android 13). The inherited work was tested on a POCO X8 Pro (Dimensity, Mali-G720 MC8).
 >
-> - **Download:** the APK builds in this repository's **Actions** workflow; the [original Mali fork's release](https://github.com/emir34-34/DroidDeck/releases/tag/panvk-kbase-glibc-r6) ships a ready-made APK and the PanVK driver zip. Changes are listed in the [changelog](docs/releases/mali-fork.md).
-> - **Setup:** install the APK (uninstall an official DroidDeck first if Android refuses the update). Import the zip under GPU drivers > Linux runtime driver, and leave the display driver on Auto.
-> - **Works:** the Steam client in Big Picture, on PanVK (Mali Vulkan for Android's kbase kernel driver, [wonderkast02/panvk-g720-kbase-csf](https://github.com/wonderkast02/panvk-g720-kbase-csf)).
-> - **Not yet: games.** This Mali-G720 has no BC (DXT) texture compression in hardware, and DXVK refuses a GPU without it. So D3D10/11 games do not start on DXVK. With WineD3D, My Summer Car reaches its splash screen and then crashes while loading the menu. Details: [MediaTek support](docs/development/mediatek.md).
+> - **Download:** the APK builds in this repository's Actions **Build APK** workflow (the `droiddeck-apk` artifact; the sign/announce jobs fail on this fork by design). The [original Mali fork's releases](https://github.com/emir34-34/DroidDeck/releases/tag/panvk-kbase-glibc-r6) ship a ready-made APK and the PanVK driver zip for the G720.
+> - **Setup:** install the APK (uninstall an official DroidDeck first if Android refuses the update). Import a Mali driver zip under GPU drivers > Linux runtime driver — the [PanVK kbase glibc driver](https://github.com/wonderkast02/panvk-g720-kbase-csf) from the original fork's releases, or either zip built by `tools/mali/build-driver-zips.sh` — and leave the display driver on Auto.
+> - **Status:** experimental. On the inherited G720 work the Steam client reached Big Picture; games did not (that GPU has no BC texture compression, and DXVK requires it). On this fork's G77 MC9 the PanVK driver gets all the way to gamescope's device selection, but Steam's UI does not come up yet: gamescope still treats a failed dma-buf export as fatal, and the software (lavapipe) fallback needs a runtime library the rootfs does not ship. Live status and the full attempt history: [mali-timeline.md](docs/development/mali-timeline.md).
+> - **Documents:** [changelog](docs/releases/mali-fork.md) · [every attempt, pass/fail](docs/development/mali-timeline.md) · [full delta vs upstream](docs/development/mali-fork-changes.md) · [driver options](docs/development/mali-graphics-options.md) · [original MediaTek write-up](docs/development/mediatek.md).
 >
-> **Reports:** open an [issue on this fork](https://github.com/emir34-34/DroidDeck/issues) with your phone model, Android/ROM (for example HyperOS or an AOSP ROM), and the session folder from `Download/DroidDeck/` as a zip. The official DroidDeck does not support Mali, so please do not send Mali problems to its Discord or issue tracker.
+> **Reports:** open an [issue on this fork](https://github.com/tushardan29-web/DroidDeck/issues) with your phone model, Android/ROM, and the zip from **Share logs** (Setup). The official DroidDeck does not support Mali, so please do not send Mali problems to its Discord or issue tracker.
 
 DroidDeck brings the SteamOS experience to Android: Valve's Steam client in Big Picture on your Adreno handheld, with Windows games through Valve's ARM64 Proton.
 

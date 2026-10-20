@@ -1,8 +1,54 @@
 # DroidDeck MediaTek / Mali fork: changelog
 
-Experimental Arm Mali (MediaTek) support on top of DroidDeck 0.3.0. APKs and the PanVK driver are
-published on the fork's [releases](https://github.com/emir34-34/DroidDeck/releases). Newest first.
-Details and known gaps: [docs/development/mediatek.md](../development/mediatek.md).
+Experimental Arm Mali (MediaTek) support, inherited from
+[emir34-34's fork](https://github.com/emir34-34/DroidDeck) (changelog below) and continued on
+`tushardan29-web/DroidDeck`. Newest first. Emir34-34's APKs and PanVK driver are published on the
+[original fork's releases](https://github.com/emir34-34/DroidDeck/releases); this fork builds its
+APK through its Actions **Build APK** workflow (`droiddeck-apk` artifact) and its patched gamescope
+through **Build gamescope (patched)**. What each change is:
+[mali-fork-changes.md](../development/mali-fork-changes.md); what has been tried:
+[mali-timeline.md](../development/mali-timeline.md); the original write-up:
+[mediatek.md](../development/mediatek.md).
+
+## 2026-10-20 · This fork: G77 MC9 bring-up, patched gamescope, driver zips (v15, `7a8b4784`)
+
+Tested on a realme RMX3031 (Dimensity 1200, Mali-G77 MC9, Android 13) — a different GPU generation
+than the G720 this work was inherited from.
+
+### App
+- Rebased onto DroidDeck 0.5.0 (`versionCode 15`, `0.5.0-mali`); upstream `facaa18a..64b966af`
+  merged in. Mali detection, driver import, and the Mali session environment from emir34-34's work
+  carry over unchanged.
+- `VK_LOADER_DEBUG=error` is set after the ICD is resolved, so Vulkan loader failures (missing
+  ICD libraries, JSON problems) land in `session.log` instead of being lost.
+
+### Gamescope
+- New patch `0120-tolerate-vulkan-devices-without-drm-nodes`: upstream gamescope refuses any
+  Vulkan device that exposes no DRM primary/render node — every kbase-backed Mali driver hits that
+  gate. The patch keeps the device with DRM bookkeeping unset. Verified live in sessions 09/10.
+- The patched build is published on this fork's releases as
+  `gamescope-3.16.29-mali-01` and pinned in `tools/gamescope/release.env`, so every APK build
+  ships it.
+
+### Tooling and docs
+- `tools/mali/build-driver-zips.sh` builds the two test ICD zips: `mali-lavapipe-linux-icd.zip`
+  (Mesa 26.2 software Vulkan) and `mali-panvk-kbase-linux-icd.zip` (zenithblue zen glibc RC3 for
+  kbase); both import cleanly in the app.
+- CI: the hosted Debian image release (`ci-debian-bullseye-r1`) is mirrored onto this fork because
+  the build fetches it from the running repository and Docker Hub pulls were rate-limited.
+- New records: [mali-graphics-options.md](../development/mali-graphics-options.md) (driver options
+  with evidence), [mali-timeline.md](../development/mali-timeline.md) (every attempt, pass/fail),
+  [mali-fork-changes.md](../development/mali-fork-changes.md) (full delta vs upstream).
+
+### Current state on the G77 MC9
+- PanVK passes everything it can: kbase uAPI 11.38, MediaTek atom layout, `gpu_id 0x90800011`
+  recognized, instance and physical device created. With patch 0120 gamescope now keeps the
+  device; the next failure is `vkGetMemoryFdKHR` returning -2 while creating a flat texture, which
+  gamescope treats as fatal. Steam UI does not come up yet; see the timeline's open items.
+- lavapipe is blocked one layer earlier: the rootfs has no `libLLVM.so.23.1`, so the loader
+  ignores the ICD entirely.
+
+## 2026-10-04 · PanVK kbase glibc r6 (APK unchanged, `91516fa`)
 
 **Current state:** the Steam client works. Games do not run yet. DXVK (D3D10/11) refuses this
 Mali-G720 because it has no BC texture compression in hardware. With WineD3D, My Summer Car reaches
