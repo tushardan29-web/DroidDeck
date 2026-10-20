@@ -13,7 +13,7 @@ been tried and why it passed or failed. The full delta against upstream is
   and poll `gh run watch`. The `sign`, `announce` and `catalog` jobs always fail without the
   upstream signing secrets — cosmetic; the deliverable is the `droiddeck-apk` artifact of the
   green **Build APK** job. `versionCode`/`versionName` live in `app/build.gradle` (currently
-  15 / `0.5.0-mali`).
+  16 / `0.5.1-mali`).
 - **Patched gamescope:** patches in `tools/gamescope/patches/`, documented in `PATCHES.md`;
   `tools/gamescope/release.env` pins the release the APK build downloads. To ship a patch:
   `gh workflow run "Build gamescope (patched)" --ref main -f tag=gamescope-3.16.29-mali-02`,

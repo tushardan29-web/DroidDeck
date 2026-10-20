@@ -564,6 +564,11 @@ class SessionService : Service() {
         guest.add("MESA_LOADER_DRIVER_OVERRIDE=zink")
         guest.add("GALLIUM_DRIVER=zink")
         guest.add("LIBGL_KOPPER_DRI2=true")
+        if (com.droiddeck.launcher.gpu.GpuInfo.detect().family == com.droiddeck.launcher.gpu.GpuInfo.Family.MALI) {
+            // panvk-kbase's DRI3 present needs dma-buf export from kbase; SHM/WSI does not.
+            guest.add("PANVK_KBASE_DRI3=0")
+            guest.add("LIBGL_KOPPER_DISABLE=false")
+        }
         LinuxRuntime.vulkanIcd(this)?.let { guest.add("VK_ICD_FILENAMES=" + it.path) }
         val linuxDriverId = SessionPrefs.linuxDriver(this)
         SessionState.runtimeDriver = linuxDriverId

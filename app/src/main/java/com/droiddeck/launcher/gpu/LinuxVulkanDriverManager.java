@@ -161,6 +161,12 @@ public class LinuxVulkanDriverManager {
                         } catch (Exception e) {
                             Log.w(TAG, "meta.json unreadable, ignoring: " + e.getMessage());
                         }
+                    } else if (base.equals(ICD_NAME)) {
+                        // adopt() writes its own with absolute paths
+                    } else {
+                        // Libraries the driver dlopens or links by $ORIGIN - the Mali kit's
+                        // libpanvk_backend.so, lavapipe's libLLVM closure - must travel with it.
+                        Files.copy(zis, new File(tmpDir, base).toPath(), StandardCopyOption.REPLACE_EXISTING);
                     }
                 }
             }
