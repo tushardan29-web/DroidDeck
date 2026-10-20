@@ -1,0 +1,32 @@
+--- a/src/rendervulkan.cpp
++++ b/src/rendervulkan.cpp
+@@ -2478,11 +2478,11 @@
+ 		};
+ 		res = g_device.vk.GetMemoryFdKHR(g_device.device(), &memory_get_fd_info, &dmabuf.fd[0]);
+ 		if ( res != VK_SUCCESS ) {
+-			vk_errorf( res, "vkGetMemoryFdKHR failed" );
+-			return false;
++			// kbase cannot hand out a dma-buf for its memory; the image still samples
++			// and composites fine, so only the dmabuf (and its backend import) is skipped.
++			vk_log.warnf( "vkGetMemoryFdKHR failed (VkResult: %d); continuing without a dmabuf", res );
+ 		}
+-
+-		if ( tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT )
++		else if ( tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT )
+ 		{
+ 			assert( g_device.vk.GetImageDrmFormatModifierPropertiesEXT != nullptr );
+ 
+@@ -2545,10 +2545,11 @@
+ 			dmabuf.stride[0] = subresourceLayout.rowPitch;
+ 		}
+ 
+-		m_dmabuf = dmabuf;
++		if ( res == VK_SUCCESS )
++			m_dmabuf = dmabuf;
+ 	}
+ 
+-	if ( flags.bFlippable == true )
++	if ( flags.bFlippable == true && m_dmabuf.n_planes > 0 )
+ 	{
+ 		m_pBackendFb = GetBackend()->ImportDmabufToBackend( &m_dmabuf );
+ 	}

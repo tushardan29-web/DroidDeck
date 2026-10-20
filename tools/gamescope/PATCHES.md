@@ -65,6 +65,15 @@ library list, before anything is published.
   one thing that needs an fd, so any DRM card is opened for those (a render node here may be the
   Mali device bound under that name, which answers no DRM ioctls). Adreno/Turnip keeps the original
   path - it reports both nodes - so nothing changes for the runtime's default driver.
+- `0130-continue-when-memory-cannot-be-exported.patch` - this app: `BInit` forces every flippable
+  texture exportable (`flags.bFlippable` sets `flags.bExportable`, `rendervulkan.cpp`) and failed
+  the whole texture when `vkGetMemoryFdKHR` refused a dma-buf - which panvk on kbase does with
+  `VkResult: -2`, so gamescope died on its first flat texture (`vulkan_create_flat_texture`
+  asserts on `bRes`). The image itself never needed the fd: it samples and composites inside
+  gamescope all the same. The failure is now a warning, `m_dmabuf` stays empty (`n_planes == 0`),
+  and the flippable backend import is skipped when there is no plane to import; the dmabuf's only
+  consumers - pipewire capture (`n_planes != 1` errors out) and a null backend fb - tolerate that
+  already. Adreno/Turnip still exports, so the success path is unchanged.
 
 Sixteen more of Armada's patches are DRM/lease/HDR-on-KMS work for a native display, which this
 app's Wayland-hosted gamescope never reaches, or need a newer gamescope than the runtime has.
