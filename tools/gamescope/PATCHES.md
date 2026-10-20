@@ -56,6 +56,15 @@ library list, before anything is published.
   own limiter slips such a frame by one refresh. The fixed-refresh branch now paces each window by
   time, as the VRR branch already did: its next frame goes out on the first refresh a capped interval
   after its last one, with half a refresh of tolerance so an on-time window keeps every Nth refresh.
+- `0120-tolerate-vulkan-devices-without-drm-nodes.patch` - this app: gamescope refused to init
+  any Vulkan device that exposes no DRM primary/render node (`rendervulkan.cpp` returns false
+  before anything else runs), which is every driver that talks to a Mali GPU through kbase rather
+  than through a KMS driver - the phone's `/dev/dri/card0` is the display controller, a different
+  device, so the check could never pass on this hardware. When a device exposes neither node the
+  device is now kept and only the primary/render bookkeeping stays unset; syncobj imports are the
+  one thing that needs an fd, so any DRM card is opened for those (a render node here may be the
+  Mali device bound under that name, which answers no DRM ioctls). Adreno/Turnip keeps the original
+  path - it reports both nodes - so nothing changes for the runtime's default driver.
 
 Sixteen more of Armada's patches are DRM/lease/HDR-on-KMS work for a native display, which this
 app's Wayland-hosted gamescope never reaches, or need a newer gamescope than the runtime has.

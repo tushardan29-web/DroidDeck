@@ -1,0 +1,37 @@
+--- a/src/rendervulkan.cpp
++++ b/src/rendervulkan.cpp
+@@ -478,6 +478,26 @@
+ 		};
+ 		vk.GetPhysicalDeviceProperties2( physDev(), &props2 );
+ 
++		if ( !drmProps.hasPrimary && !drmProps.hasRender ) {
++			// A Mali-class kbase driver reaches the GPU through its own device node and
++			// exposes no DRM nodes; the phone's KMS card belongs to the display instead.
++			// Carry on without primary/render nodes - only syncobj imports need an fd -
++			// and take any DRM card for those, since a render node here may not be DRM.
++			vk_log.warnf( "physical device exposes no DRM nodes; continuing without them" );
++			static const char *const s_DRMCandidates[] = {
++				"/dev/dri/card0", "/dev/dri/card1", "/dev/dri/card2", "/dev/dri/card3",
++				"/dev/dri/renderD128", "/dev/dri/renderD129",
++			};
++			for ( const char *node : s_DRMCandidates ) {
++				m_drmRendererFd = open( node, O_RDWR | O_CLOEXEC );
++				if ( m_drmRendererFd >= 0 ) {
++					vk_log.infof( "using %s for DRM syncobj", node );
++					break;
++				}
++			}
++			if ( m_drmRendererFd < 0 )
++				vk_log.warnf( "no DRM device found; syncobj timeline imports will not work" );
++		} else {
+ 		if ( !GetBackend()->UsesVulkanSwapchain() && !drmProps.hasPrimary ) {
+ 			vk_log.errorf( "physical device has no primary node" );
+ 			return false;
+@@ -507,6 +527,7 @@
+ 			m_bHasDrmPrimaryDevId = true;
+ 			m_drmPrimaryDevId = makedev( drmProps.primaryMajor, drmProps.primaryMinor );
+ 		}
++		}
+ #else
+ 		vk_log.warnf( "built without DRM support" );
+ #endif
