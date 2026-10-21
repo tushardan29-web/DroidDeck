@@ -103,5 +103,19 @@ library list, before anything is published.
   fence that exists - dmabuf fd or acquire timeline eventfd - still gets its wait. Complements
   0140: this unblocks the client -> gamescope intake, 0140 the gamescope -> compositor output.
 
+- `0151-accept-client-commits-when-dmabuf-fence-never-signals.patch` - this app: a client buffer
+  that does have a dmabuf (Xwayland's glamor trees, which is how Steam's UI window commits)
+  took `fence = dup(dmabuf.fd[0])` and was added to `g_ImageWaiter`, waiting for the dma-buf's
+  implicit fence to make the fd readable. On kbase that fence never signals through the fd's
+  poll interface, so the commit sat in `commit_queue` with `done` false forever:
+  `window_has_commits` stayed false, `pick_primary_focus_and_override` found Steam's window but
+  rejected it, the global focus window stayed null, `hasRepaint` was never set, and gamescope
+  never painted a frame (session 13 of mali-04: Steam mapped and focusable, `Rerolling global
+  focus...` every vblank, zero commits done). 0150 only covered the no-dmabuf fallback, so this
+  branch was the remaining hole. The commit is now accepted as ready (`bKnownReady`) without
+  waiting on the implicit fence; the explicit-sync path above still waits on its acquire-timeline
+  eventfd, which signals normally. Presenting a frame the client may still be rendering is the
+  tradeoff - measured against never presenting at all.
+
 Sixteen more of Armada's patches are DRM/lease/HDR-on-KMS work for a native display, which this
 app's Wayland-hosted gamescope never reaches, or need a newer gamescope than the runtime has.

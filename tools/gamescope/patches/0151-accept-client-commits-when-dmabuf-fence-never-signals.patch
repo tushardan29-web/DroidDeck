@@ -1,0 +1,18 @@
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -8502,7 +8502,14 @@
+ 		struct wlr_dmabuf_attributes dmabuf = {0};
+ 		if ( wlr_buffer_get_dmabuf( buf, &dmabuf ) )
+ 		{
+-			fence = dup( dmabuf.fd[0] );
++			// kbase's implicit fence on a client dma-buf never signals
++			// through the fd's poll interface on Mali, so waiting on the
++			// dup'd descriptor would leave the commit undoned forever and
++			// the window would never paint. Implicit-sync clients (Xwayland
++			// and its glamor trees) have no explicit acquire eventfd above,
++			// so accept their commits as ready; explicit-sync clients still
++			// wait on their timeline eventfd as usual.
++			bKnownReady = true;
+ 		}
+ 		else
+ 		{
