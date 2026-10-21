@@ -1,0 +1,15 @@
+--- a/src/steamcompmgr.cpp
++++ b/src/steamcompmgr.cpp
+@@ -8507,6 +8507,12 @@
+ 		else
+ 		{
+ 			fence = newCommit->vulkanTex->memoryFence();
++
++			// Mali's kbase driver cannot export this device's memory as a
++			// sync fd. With no fence to wait on, accept the commit as ready
++			// instead of waiting forever on an invalid descriptor.
++			if ( fence < 0 )
++				bKnownReady = true;
+ 		}
+ 	}
+ 

@@ -136,8 +136,15 @@ Chosen options (in order):
    two buffers never stall). Gated by the new `shm_present_fallback` convar (default on; Adreno
    still takes the dma-buf path first), with heartbeat logging (`present heartbeat #…: visible=…,
    layers=… shm-readbacks=… null-presents=…`) to prove the paint path ran. The root fix stays
-   sequenced after it: **driver-side dma-buf export** for kbase (ION/`/dev/dma_heap` placeable
-   port, shipped with C), after which 0140's fallback simply stops firing.
+    sequenced after it: **driver-side dma-buf export** for kbase (ION/`/dev/dma_heap` placeable
+    port, shipped with C), after which 0140's fallback simply stops firing.
+    Session 01 of mali-03 then located an even earlier break: client commits carrying no
+    exportable sync fd died in gamescope's intake — `CVulkanTexture::memoryFence()` returns -1
+    on kbase, `g_ImageWaiter.AddWaitable` got `EBADF`, and the commit never signaled (4 commits,
+    4 dead waitables, no `present heartbeat`, so paint never ran and 0140 never fired).
+    `0150-accept-client-commits-when-no-sync-fd.patch` accepts fence-less commits as ready
+    (existing dmabuf/timeline fences still wait), so D ships as 0150 + 0140: intake first,
+    output second.
 
 ## Documentation (ours)
 

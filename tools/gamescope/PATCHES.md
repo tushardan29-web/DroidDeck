@@ -91,5 +91,17 @@ library list, before anything is published.
   The root fix (kbase dma-buf export via the ION/dma-heap placeable port, shipped with the
   driver rebuild) makes this fallback go quiet by itself.
 
+- `0150-accept-client-commits-when-no-sync-fd.patch` - this app: a client buffer with no dmabuf
+  (wl_shm, or an export this device refuses) fell through to `CVulkanTexture::memoryFence()`,
+  which exports the texture's memory as a sync fd - impossible on kbase, so it printed
+  `vkGetMemoryFdKHR failed` and returned -1. The commit was then registered with
+  `g_ImageWaiter.AddWaitable`, whose `epoll_ctl(-1)` logged `Failed to add waitable: Bad file
+  descriptor`; the commit never signaled, `hasRepaint` never set, and gamescope never painted a
+  frame at all (session 01 of mali-03: exactly 4 client commits, 4 dead waitables, no `present
+  heartbeat`, 0 windows while Steam's UI ran). With no fence to wait on such commits are now
+  accepted as ready (`bKnownReady`, the path pre-signaled timeline commits already take); a
+  fence that exists - dmabuf fd or acquire timeline eventfd - still gets its wait. Complements
+  0140: this unblocks the client -> gamescope intake, 0140 the gamescope -> compositor output.
+
 Sixteen more of Armada's patches are DRM/lease/HDR-on-KMS work for a native display, which this
 app's Wayland-hosted gamescope never reaches, or need a newer gamescope than the runtime has.
