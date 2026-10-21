@@ -122,6 +122,22 @@ Chosen options (in order):
    supersedes the adapter) and `0002` (the `fn_addr` uint32 truncation that freezes Steam's
    UI). RC3 still has that bug (`panvk_vX_cmd_draw.c:2073`, none of its 173 patches touch it),
    so C is required for long sessions even once the first frame lands.
+4. **D — gamescope SHM present fallback** (`0140-present-via-shm-when-dma-buf-export-unavailable.patch`,
+   chosen 2026-10-21 as "both, sequenced", first): after A+B the session reaches gamescope with a
+   healthy renderer, but kbase still refuses every `vkGetMemoryFdKHR` (`VkResult: -2`), so patch
+   0130 leaves the flippable textures without an exported dma-buf, `CWaylandPlane::Present` finds
+   no backend framebuffer, and the Wayland backend attaches a **null** buffer — the toplevel never
+   maps, the compositor reports `0 windows open`, and `frame.first` never fires (0 GPU frames and
+   0 window opens across all of session 01; the two observed `window redraws` are cursor/decorations).
+   GameScope's Wayland backend had no non-dma-buf path, so 0140 adds one: flippable images are
+   flagged `bTransferSrc`, `CVulkanTexture::ReadbackToHost` copies the composed frame into a
+   persistently mapped host buffer, and `CWaylandPlane::Present` attaches it as a ping-pong pair
+   of wl_shm buffers (our compositor copies shm frames synchronously and releases immediately, so
+   two buffers never stall). Gated by the new `shm_present_fallback` convar (default on; Adreno
+   still takes the dma-buf path first), with heartbeat logging (`present heartbeat #…: visible=…,
+   layers=… shm-readbacks=… null-presents=…`) to prove the paint path ran. The root fix stays
+   sequenced after it: **driver-side dma-buf export** for kbase (ION/`/dev/dma_heap` placeable
+   port, shipped with C), after which 0140's fallback simply stops firing.
 
 ## Documentation (ours)
 

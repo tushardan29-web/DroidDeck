@@ -1,0 +1,433 @@
+--- a/src/rendervulkan.hpp
++++ b/src/rendervulkan.hpp
+@@ -164,6 +164,12 @@
+ 	bool BInit( uint32_t width, uint32_t height, uint32_t depth, uint32_t drmFormat, createFlags flags, wlr_dmabuf_attributes *pDMA = nullptr, uint32_t contentWidth = 0, uint32_t contentHeight = 0, CVulkanTexture *pExistingImageToReuseMemory = nullptr, gamescope::OwningRc<gamescope::IBackendFb> pBackendFb = nullptr );
+ 	bool BInitFromSwapchain( VkImage image, uint32_t width, uint32_t height, VkFormat format );
+ 
++	// Copies the image into a persistently mapped host buffer (for the Wayland
++	// backend's wl_shm present fallback when dma-buf export is unavailable).
++	// Returns nullptr when the image cannot be read back; *puStride is the
++	// tightly packed bytes per row of the returned pixels when it succeeds.
++	const uint8_t *ReadbackToHost( uint32_t *puStride );
++
+ 	uint32_t IncRef();
+ 	uint32_t DecRef();
+ 
+@@ -219,7 +225,12 @@
+ 
+ 	VkImage m_vkImage = VK_NULL_HANDLE;
+ 	VkDeviceMemory m_vkImageMemory = VK_NULL_HANDLE;
+-	
++
++	VkBuffer m_readbackBuffer = VK_NULL_HANDLE;
++	VkDeviceMemory m_readbackMemory = VK_NULL_HANDLE;
++	void *m_readbackPtr = nullptr;
++	uint32_t m_readbackSize = 0;
++
+ 	VkImageView m_srgbView = VK_NULL_HANDLE;
+ 	VkImageView m_linearView = VK_NULL_HANDLE;
+ 
+@@ -743,6 +754,7 @@
+ 	VK_FUNC(CmdClearColorImage) \
+ 	VK_FUNC(CmdCopyBufferToImage) \
+ 	VK_FUNC(CmdCopyImage) \
++	VK_FUNC(CmdCopyImageToBuffer) \
+ 	VK_FUNC(CmdDispatch) \
+ 	VK_FUNC(CmdDraw) \
+ 	VK_FUNC(CmdEndRendering) \
+--- a/src/rendervulkan.cpp
++++ b/src/rendervulkan.cpp
+@@ -2108,6 +2108,10 @@
+ 	if ( flags.bFlippable == true )
+ 	{
+ 		flags.bExportable = true;
++		// Flippable images can end up presented through the Wayland backend's
++		// wl_shm fallback (dma-buf export is unavailable on Mali kbase), which
++		// needs to copy them out.
++		flags.bTransferSrc = true;
+ 	}
+ 
+ 	if ( flags.bTransferSrc == true )
+@@ -2738,6 +2742,175 @@
+ 	return GetRefCount() != 0;
+ }
+ 
++const uint8_t *CVulkanTexture::ReadbackToHost( uint32_t *puStride )
++{
++	if ( puStride )
++		*puStride = 0;
++
++	if ( !m_bInitialized || m_vkImage == VK_NULL_HANDLE )
++		return nullptr;
++
++	// Only 4 bytes per pixel formats are copied back (XRGB/ARGB8888).
++	if ( DRMFormatGetBPP( m_drmFormat ) != 4 )
++		return nullptr;
++
++	const VkDeviceSize uSize = (VkDeviceSize)m_width * m_height * 4;
++
++	if ( m_readbackBuffer == VK_NULL_HANDLE || uSize > (VkDeviceSize)m_readbackSize )
++	{
++		if ( m_readbackBuffer != VK_NULL_HANDLE )
++		{
++			if ( m_readbackPtr != nullptr )
++			{
++				g_device.vk.UnmapMemory( g_device.device(), m_readbackMemory );
++				m_readbackPtr = nullptr;
++			}
++			g_device.vk.DestroyBuffer( g_device.device(), m_readbackBuffer, nullptr );
++			m_readbackBuffer = VK_NULL_HANDLE;
++			g_device.vk.FreeMemory( g_device.device(), m_readbackMemory, nullptr );
++			m_readbackMemory = VK_NULL_HANDLE;
++			m_readbackSize = 0;
++		}
++
++		VkBufferCreateInfo bufferCreateInfo = {
++			.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
++			.size = uSize,
++			.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
++		};
++
++		VkResult res = g_device.vk.CreateBuffer( g_device.device(), &bufferCreateInfo, nullptr, &m_readbackBuffer );
++		if ( res != VK_SUCCESS )
++		{
++			vk_errorf( res, "vkCreateBuffer failed for readback" );
++			m_readbackBuffer = VK_NULL_HANDLE;
++			return nullptr;
++		}
++
++		VkMemoryRequirements memRequirements;
++		g_device.vk.GetBufferMemoryRequirements( g_device.device(), m_readbackBuffer, &memRequirements );
++
++		uint32_t memTypeIndex = g_device.findMemoryType( VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, memRequirements.memoryTypeBits );
++		if ( memTypeIndex == ~0u )
++		{
++			vk_log.errorf( "findMemoryType failed for readback" );
++			g_device.vk.DestroyBuffer( g_device.device(), m_readbackBuffer, nullptr );
++			m_readbackBuffer = VK_NULL_HANDLE;
++			return nullptr;
++		}
++
++		VkMemoryAllocateInfo allocInfo = {
++			.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
++			.allocationSize = memRequirements.size,
++			.memoryTypeIndex = memTypeIndex,
++		};
++
++		res = g_device.vk.AllocateMemory( g_device.device(), &allocInfo, nullptr, &m_readbackMemory );
++		if ( res != VK_SUCCESS )
++		{
++			vk_errorf( res, "vkAllocateMemory failed for readback" );
++			g_device.vk.DestroyBuffer( g_device.device(), m_readbackBuffer, nullptr );
++			m_readbackBuffer = VK_NULL_HANDLE;
++			m_readbackMemory = VK_NULL_HANDLE;
++			return nullptr;
++		}
++
++		res = g_device.vk.BindBufferMemory( g_device.device(), m_readbackBuffer, m_readbackMemory, 0 );
++		if ( res != VK_SUCCESS )
++		{
++			vk_errorf( res, "vkBindBufferMemory failed for readback" );
++			g_device.vk.DestroyBuffer( g_device.device(), m_readbackBuffer, nullptr );
++			m_readbackBuffer = VK_NULL_HANDLE;
++			g_device.vk.FreeMemory( g_device.device(), m_readbackMemory, nullptr );
++			m_readbackMemory = VK_NULL_HANDLE;
++			return nullptr;
++		}
++
++		res = g_device.vk.MapMemory( g_device.device(), m_readbackMemory, 0, VK_WHOLE_SIZE, 0, &m_readbackPtr );
++		if ( res != VK_SUCCESS )
++		{
++			vk_errorf( res, "vkMapMemory failed for readback" );
++			g_device.vk.DestroyBuffer( g_device.device(), m_readbackBuffer, nullptr );
++			m_readbackBuffer = VK_NULL_HANDLE;
++			g_device.vk.FreeMemory( g_device.device(), m_readbackMemory, nullptr );
++			m_readbackMemory = VK_NULL_HANDLE;
++			return nullptr;
++		}
++
++		m_readbackSize = (uint32_t)uSize;
++	}
++
++	g_device.waitIdle();
++
++	std::unique_ptr<CVulkanCmdBuffer> cmdBuffer = g_device.commandBuffer();
++	if ( !cmdBuffer )
++		return nullptr;
++
++	VkCommandBuffer rawCmd = cmdBuffer->rawBuffer();
++
++	VkImageMemoryBarrier toTransfer = {
++		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
++		.srcAccessMask = VK_ACCESS_MEMORY_WRITE_BIT,
++		.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
++		.oldLayout = VK_IMAGE_LAYOUT_GENERAL,
++		.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
++		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
++		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
++		.image = m_vkImage,
++		.subresourceRange = {
++			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
++			.baseMipLevel = 0,
++			.levelCount = 1,
++			.baseArrayLayer = 0,
++			.layerCount = 1,
++		},
++	};
++	g_device.vk.CmdPipelineBarrier( rawCmd, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
++									0, 0, nullptr, 0, nullptr, 1, &toTransfer );
++
++	VkBufferImageCopy copyRegion = {
++		.bufferOffset = 0,
++		.bufferRowLength = 0,
++		.bufferImageHeight = 0,
++		.imageSubresource = {
++			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
++			.mipLevel = 0,
++			.baseArrayLayer = 0,
++			.layerCount = 1,
++		},
++		.imageOffset = { 0, 0, 0 },
++		.imageExtent = { m_width, m_height, 1 },
++	};
++	g_device.vk.CmdCopyImageToBuffer( rawCmd, m_vkImage, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, m_readbackBuffer, 1, &copyRegion );
++
++	VkImageMemoryBarrier toGeneral = {
++		.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
++		.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT,
++		.dstAccessMask = VK_ACCESS_MEMORY_READ_BIT,
++		.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
++		.newLayout = VK_IMAGE_LAYOUT_GENERAL,
++		.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
++		.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
++		.image = m_vkImage,
++		.subresourceRange = {
++			.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT,
++			.baseMipLevel = 0,
++			.levelCount = 1,
++			.baseArrayLayer = 0,
++			.layerCount = 1,
++		},
++	};
++	g_device.vk.CmdPipelineBarrier( rawCmd, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
++									0, 0, nullptr, 0, nullptr, 1, &toGeneral );
++
++	uint64_t ulSeq = g_device.submit( std::move( cmdBuffer ) );
++	g_device.wait( ulSeq );
++
++	if ( puStride )
++		*puStride = m_width * 4;
++
++	return (const uint8_t *)m_readbackPtr;
++}
++
+ CVulkanTexture::CVulkanTexture( void )
+ {
+ }
+@@ -2752,6 +2925,20 @@
+ 		m_pMappedData = nullptr;
+ 	}
+ 
++	if ( m_readbackBuffer != VK_NULL_HANDLE )
++	{
++		if ( m_readbackPtr != nullptr )
++		{
++			g_device.vk.UnmapMemory( g_device.device(), m_readbackMemory );
++			m_readbackPtr = nullptr;
++		}
++		g_device.vk.DestroyBuffer( g_device.device(), m_readbackBuffer, nullptr );
++		m_readbackBuffer = VK_NULL_HANDLE;
++		g_device.vk.FreeMemory( g_device.device(), m_readbackMemory, nullptr );
++		m_readbackMemory = VK_NULL_HANDLE;
++		m_readbackSize = 0;
++	}
++
+ 	if ( m_srgbView != VK_NULL_HANDLE )
+ 	{
+ 		g_device.vk.DestroyImageView( g_device.device(), m_srgbView, nullptr );
+--- a/src/Backends/WaylandBackend.cpp
++++ b/src/Backends/WaylandBackend.cpp
+@@ -123,6 +123,14 @@
+     gamescope::ConVar<bool> cv_wayland_mouse_relmotion_without_keyboard_focus( "wayland_mouse_relmotion_without_keyboard_focus", false, "Should we only forward mouse relative motion to the app when we have keyboard focus?" );
+     gamescope::ConVar<bool> cv_wayland_use_modifiers( "wayland_use_modifiers", true, "Use DMA-BUF modifiers?" );
+ 
++    // Present fallback for Vulkan devices that cannot export the frame as a
++    // dma-buf (Mali kbase): read it back and attach it as a wl_shm buffer.
++    gamescope::ConVar<bool> cv_shm_present_fallback( "shm_present_fallback", true, "Present frames through wl_shm when dma-buf export is unavailable." );
++
++    static uint64_t s_uShmReadbacks = 0;
++    static uint64_t s_uNullPresents = 0;
++    static uint64_t s_uPresentCalls = 0;
++
+     gamescope::ConVar<float> cv_wayland_hdr10_saturation_scale( "wayland_hdr10_saturation_scale", 1.0, "Saturation scale for HDR10 content by gamut expansion. 1.0 - 1.2 is a good range to play with." );
+ 
+     class CWaylandConnector;
+@@ -219,6 +227,8 @@
+         void Present( std::optional<WaylandPlaneState> oState );
+         void Present( const FrameInfo_t::Layer_t *pLayer );
+ 
++        wl_buffer *ShmReadbackBuffer( gamescope::Rc<CVulkanTexture> tex );
++
+         void CommitLibDecor( libdecor_configuration *pConfiguration );
+         void Commit();
+ 
+@@ -307,6 +317,16 @@
+ 
+         std::mutex m_PlaneStateLock;
+         std::optional<WaylandPlaneState> m_oCurrentPlaneState;
++
++        // wl_shm present fallback ping-pong buffers (see ShmReadbackBuffer).
++        wl_buffer *m_pShmBuffers[2] = { nullptr, nullptr };
++        void *m_pShmPtrs[2] = { nullptr, nullptr };
++        int m_nShmFds[2] = { -1, -1 };
++        uint32_t m_uShmWidth = 0;
++        uint32_t m_uShmHeight = 0;
++        uint32_t m_uShmFormat = 0;
++        uint32_t m_uShmSize = 0;
++        unsigned m_uShmIndex = 0;
+     };
+     const wl_surface_listener CWaylandPlane::s_SurfaceListener =
+     {
+@@ -1055,6 +1075,12 @@
+     {
+         UpdateFullscreenState();
+ 
++        s_uPresentCalls++;
++        if ( s_uPresentCalls <= 5 || ( s_uPresentCalls % 600 ) == 0 )
++            xdg_log.infof( "present heartbeat #%llu: visible=%d layers=%u shm-readbacks=%llu null-presents=%llu",
++                (unsigned long long)s_uPresentCalls, (int)m_bVisible, (unsigned)pFrameInfo->layers.count(),
++                (unsigned long long)s_uShmReadbacks, (unsigned long long)s_uNullPresents );
++
+         bool bNeedsFullComposite = false;
+ 
+         if ( !m_bVisible )
+@@ -1359,6 +1385,16 @@
+ 
+         m_oCurrentPlaneState = std::nullopt;
+ 
++        for ( int i = 0; i < 2; i++ )
++        {
++            if ( m_pShmBuffers[i] )
++                wl_buffer_destroy( m_pShmBuffers[i] );
++            if ( m_pShmPtrs[i] )
++                munmap( m_pShmPtrs[i], m_uShmSize );
++            if ( m_nShmFds[i] >= 0 )
++                close( m_nShmFds[i] );
++        }
++
+         if ( m_pFrame )
+             libdecor_frame_unref( m_pFrame ); // Ew.
+ 
+@@ -1643,12 +1679,20 @@
+ 
+     void CWaylandPlane::Present( const FrameInfo_t::Layer_t *pLayer )
+     {
+-        CWaylandFb *pWaylandFb = pLayer && pLayer->tex != nullptr ? static_cast<CWaylandFb*>( pLayer->tex->GetBackendFb()->EnsureImported() ) : nullptr;
++        gamescope::IBackendFb *pBackendFb = pLayer && pLayer->tex != nullptr ? pLayer->tex->GetBackendFb() : nullptr;
++        CWaylandFb *pWaylandFb = pBackendFb ? static_cast<CWaylandFb*>( pBackendFb->EnsureImported() ) : nullptr;
+         wl_buffer *pBuffer = pWaylandFb ? pWaylandFb->GetHostBuffer() : nullptr;
+ 
++        // Devices that cannot export the frame as a dma-buf (Mali kbase) have no
++        // backend framebuffer to import: read the frame back and present it as
++        // wl_shm instead of attaching a null buffer (which never maps the window).
++        if ( !pBuffer && pLayer && pLayer->tex != nullptr && cv_shm_present_fallback )
++            pBuffer = ShmReadbackBuffer( pLayer->tex );
++
+         if ( pBuffer )
+         {
+-            pWaylandFb->OnCompositorAcquire();
++            if ( pWaylandFb )
++                pWaylandFb->OnCompositorAcquire();
+ 
+             Present(
+                 ClipPlane( WaylandPlaneState
+@@ -1670,10 +1714,89 @@
+         }
+         else
+         {
++            s_uNullPresents++;
+             Present( std::nullopt );
+         }
+     }
+ 
++    wl_buffer *CWaylandPlane::ShmReadbackBuffer( gamescope::Rc<CVulkanTexture> tex )
++    {
++        if ( tex == nullptr )
++            return nullptr;
++
++        uint32_t uStride = 0;
++        const uint8_t *pPixels = tex->ReadbackToHost( &uStride );
++        if ( pPixels == nullptr )
++            return nullptr;
++
++        const uint32_t uWidth = tex->width();
++        const uint32_t uHeight = tex->height();
++        const uint32_t uFormat = DRMFormatHasAlpha( tex->drmFormat() ) ? WL_SHM_FORMAT_ARGB8888 : WL_SHM_FORMAT_XRGB8888;
++        const uint32_t uSize = uStride * uHeight;
++
++        if ( m_uShmWidth != uWidth || m_uShmHeight != uHeight || m_uShmFormat != uFormat )
++        {
++            for ( int i = 0; i < 2; i++ )
++            {
++                if ( m_pShmBuffers[i] )
++                {
++                    wl_buffer_destroy( m_pShmBuffers[i] );
++                    m_pShmBuffers[i] = nullptr;
++                }
++                if ( m_pShmPtrs[i] )
++                {
++                    munmap( m_pShmPtrs[i], m_uShmSize );
++                    m_pShmPtrs[i] = nullptr;
++                }
++                if ( m_nShmFds[i] >= 0 )
++                {
++                    close( m_nShmFds[i] );
++                    m_nShmFds[i] = -1;
++                }
++            }
++            m_uShmWidth = uWidth;
++            m_uShmHeight = uHeight;
++            m_uShmFormat = uFormat;
++            m_uShmSize = uSize;
++        }
++
++        const unsigned uIndex = m_uShmIndex;
++        m_uShmIndex = ( m_uShmIndex + 1u ) & 1u;
++
++        if ( m_pShmBuffers[uIndex] == nullptr )
++        {
++            m_nShmFds[uIndex] = CreateShmBuffer( uSize, nullptr );
++            if ( m_nShmFds[uIndex] < 0 )
++                return nullptr;
++
++            m_pShmPtrs[uIndex] = mmap( nullptr, uSize, PROT_READ | PROT_WRITE, MAP_SHARED, m_nShmFds[uIndex], 0 );
++            if ( m_pShmPtrs[uIndex] == MAP_FAILED )
++            {
++                m_pShmPtrs[uIndex] = nullptr;
++                close( m_nShmFds[uIndex] );
++                m_nShmFds[uIndex] = -1;
++                return nullptr;
++            }
++
++            wl_shm_pool *pPool = wl_shm_create_pool( m_pBackend->GetShm(), m_nShmFds[uIndex], int32_t( uSize ) );
++            m_pShmBuffers[uIndex] = wl_shm_pool_create_buffer( pPool, 0, uWidth, uHeight, uStride, uFormat );
++            wl_shm_pool_destroy( pPool );
++
++            if ( m_pShmBuffers[uIndex] == nullptr )
++            {
++                munmap( m_pShmPtrs[uIndex], uSize );
++                m_pShmPtrs[uIndex] = nullptr;
++                close( m_nShmFds[uIndex] );
++                m_nShmFds[uIndex] = -1;
++                return nullptr;
++            }
++        }
++
++        memcpy( m_pShmPtrs[uIndex], pPixels, uSize );
++        s_uShmReadbacks++;
++        return m_pShmBuffers[uIndex];
++    }
++
+     void CWaylandPlane::UpdateVRRRefreshRate()
+     {
+         if ( m_pParent )

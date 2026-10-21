@@ -75,5 +75,21 @@ library list, before anything is published.
   consumers - pipewire capture (`n_planes != 1` errors out) and a null backend fb - tolerate that
   already. Adreno/Turnip still exports, so the success path is unchanged.
 
+- `0140-present-via-shm-when-dma-buf-export-unavailable.patch` - this app: on Mali kbase the
+  Vulkan device never hands out a dma-buf (`vkGetMemoryFdKHR` → `VkResult: -2`), so after 0130
+  the composed frame exists but has no exported fd, `CWaylandPlane::Present` finds no backend
+  framebuffer and attaches a **null** buffer - the toplevel never maps, the compositor keeps
+  reporting `0 windows open`, and the app waits forever at "Waiting for Steam's first frame"
+  (session 01: zero window opens, zero GPU frames in 56 minutes; the two `window redraws` are
+  cursor/decorations). Flippable images are now flagged `bTransferSrc`, a new
+  `CVulkanTexture::ReadbackToHost` copies the composed frame into a persistently mapped host
+  buffer (4-byte-per-pixel formats, GENERAL layout restored after the copy), and the plane
+  attaches it as a ping-pong pair of wl_shm buffers - safe here because our compositor copies
+  shm frames synchronously and releases the wl_buffer immediately. Gated by the new
+  `shm_present_fallback` convar (default on; the dma-buf path is still tried first, so Adreno
+  never enters the fallback), with a `present heartbeat` log line to prove the paint path ran.
+  The root fix (kbase dma-buf export via the ION/dma-heap placeable port, shipped with the
+  driver rebuild) makes this fallback go quiet by itself.
+
 Sixteen more of Armada's patches are DRM/lease/HDR-on-KMS work for a native display, which this
 app's Wayland-hosted gamescope never reaches, or need a newer gamescope than the runtime has.
