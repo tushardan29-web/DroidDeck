@@ -1,0 +1,89 @@
+name: Build Mali driver kit (panvk + DRM adapter)
+
+# Builds the DRM adapter from tools/mali/droiddeck_mali_icd.c, then the two
+# importable driver zips (lavapipe + PanVK with the adapter in front). The
+# adapter answers gamescope's VK_EXT_physical_device_drm query with the real
+# device numbers of the session's Mali render node - without it, panvk-kbase
+# reports no DRM nodes, gamescope never gets a DRM fd, XWayland falls back to
+# software and Steam's webhelper cannot create a GL context at all.
+
+on:
+  push:
+    paths:
+      - 'tools/mali/**'
+      - '.github/workflows/mali-driver-kit.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  kit:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the Vulkan headers
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libvulkan-dev
+          if [ ! -f /usr/include/vulkan/vk_icd.h ]; then
+            curl -fsSL --retry 3 -o /usr/include/vulkan/vk_icd.h \
+              https://raw.githubusercontent.com/KhronosGroup/Vulkan-Headers/main/include/vulkan/vk_icd.h
+            sudo chown root:root /usr/include/vulkan/vk_icd.h
+          fi
+
+      - name: Build the DRM adapter
+        run: |
+          set -euo pipefail
+          gcc -shared -fPIC -O2 -Wall -Wl,--no-undefined -ldl -lpthread \
+            -o /tmp/libvulkan_droiddeck_mali.so tools/mali/droiddeck_mali_icd.c
+          ls -l /tmp/libvulkan_droiddeck_mali.so
+
+      - name: Check the adapter the way the importer does
+        run: |
+          set -euo pipefail
+          so=/tmp/libvulkan_droiddeck_mali.so
+          readelf -h "$so" | grep -q AArch64
+          grep -qa 'libc.so.6' "$so"
+          grep -qa 'libpanvk_backend.so' "$so"
+          grep -qa 'VK_EXT_physical_device_drm' "$so"
+          nm -D --defined-only "$so" | grep -q ' vk_icdGetInstanceProcAddr'
+          nm -D --defined-only "$so" | grep -q ' vk_icdNegotiateLoaderICDInterfaceVersion'
+          echo "adapter ok"
+
+      - name: Build the driver zips
+        run: |
+          set -euo pipefail
+          MALI_ADAPTER=/tmp/libvulkan_droiddeck_mali.so bash tools/mali/build-driver-zips.sh
+
+      - name: Check the PanVK kit layout
+        run: |
+          set -euo pipefail
+          z=build/mali-driver-zips/mali-panvk-kbase-linux-icd.zip
+          unzip -l "$z"
+          # The importer adopts the first libvulkan_*.so as the ICD and keeps
+          # everything else as companions, so the adapter must come first and
+          # the backend must not be named libvulkan_*.
+          first=$(unzip -l "$z" | awk '/libvulkan_[A-Za-z0-9_]+\.so/ {print $4; exit}')
+          test "$first" = "libvulkan_droiddeck_mali.so" || {
+            echo "::error::first ICD is '$first', expected the adapter"; exit 1; }
+          unzip -l "$z" | grep -q 'libpanvk_backend.so'
+          unzip -p "$z" meta.json | grep -q 'DRM adapter'
+          unzip -p "$z" meta.json | grep -q '"minGlibc"'
+          # Both halves must be aarch64 and glibc - the same two checks the
+          # app makes at import time.
+          mkdir -p /tmp/kitcheck
+          unzip -o -q -d /tmp/kitcheck "$z"
+          for f in /tmp/kitcheck/*.so; do
+            readelf -h "$f" | grep -q AArch64
+            grep -qa 'libc.so.6' "$f"
+          done
+          echo "kit ok"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mali-driver-zips
+          path: build/mali-driver-zips/*.zip

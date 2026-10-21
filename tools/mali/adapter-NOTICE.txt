@@ -1,0 +1,25 @@
+DroidDeck Mali-G77 DRM adapter kit 0.2.0
+
+This package = zenithblue's PanVK-kbase glibc build (panvk-kbase-v0.1.0-rc3,
+unchanged, fetched from its release and checksum-verified) with DroidDeck's
+small ICD adapter in front of it. PanVK does all the rendering; the adapter
+only answers gamescope's VK_EXT_physical_device_drm query with the real
+device numbers of the session's Mali render node, so gamescope (and through
+it XWayland and Steam's webhelper) gets a working DRM file descriptor.
+No graphics capability is fabricated and nothing outside this directory is
+modified. Root, SELinux and vendor libraries are not touched.
+
+Derived from the DroidDeck Mali-G615 experimental adapter 0.1.0 (MIT) by the
+DroidDeck Mali-G615 integration contributors; the device gate and the node
+lookup were generalised for DroidDeck's /dev/dri session layout. The MIT
+text is in adapter-LICENSE.
+
+Sources:
+- DroidDeck, GPL-3.0: https://github.com/Droid-Deck/DroidDeck
+- PanVK-kbase: https://github.com/zenithblue-oss/panvk-kbase-android
+  Release panvk-kbase-v0.1.0-rc3, mesa base 5a07217f034b3e50d8c7c7794f97a2df1742613b.
+- Mesa: https://gitlab.freedesktop.org/mesa/mesa
+
+Import this under GPU drivers > Linux runtime driver, never under the
+Android display driver. Keep the display driver on Auto.
+If the GPU hangs or the phone overheats, stop the experiment.

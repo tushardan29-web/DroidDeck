@@ -77,9 +77,51 @@ is marked *(inherited)*; its history is the [changelog](../releases/mali-fork.md
 
 - `tools/mali/build-driver-zips.sh` — builds the two importable ICD zips used for testing on this
   device: `mali-lavapipe-linux-icd.zip` (ALARM `vulkan-swrast`, Mesa 26.2 software Vulkan) and
-  `mali-panvk-kbase-linux-icd.zip` (zenithblue's glibc PanVK RC3 for kbase, renamed
-  `libvulkan_panfrost.so`), each with a `meta.json` recording the max GLIBC symbol. The zips and
-  the rationale for each driver choice are in [mali-graphics-options.md](mali-graphics-options.md).
+  `mali-panvk-kbase-linux-icd.zip` (zenithblue's glibc PanVK RC3 for kbase), each with a
+  `meta.json` recording the max GLIBC symbol. With `MALI_ADAPTER` set (the CI
+  `mali-driver-kit.yml` workflow always sets it) the PanVK zip becomes the **adapter kit**: the
+  DRM adapter is the ICD and the PanVK build ships beside it as `libpanvk_backend.so`.
+  The zips and the rationale for each driver choice are in
+  [mali-graphics-options.md](mali-graphics-options.md).
+- `tools/mali/droiddeck_mali_icd.c` — the DRM adapter (CDLL ICD shim), derived from
+  `jdmg28/DroidDeck-Mali`'s MIT G615 adapter: it forwards everything to
+  `libpanvk_backend.so` and answers gamescope's `VK_EXT_physical_device_drm` query with the
+  real device numbers of the session's Mali node. Changes from theirs: any ARM Mali gate
+  (`Mali-` prefix), and a `/dev/dri/renderD*` scan fallback, because this fork's session does
+  not bind `/dev/mali0` — it binds the kbase node as `/dev/dri/renderD<minor>`.
+  `tools/mali/adapter-LICENSE` (MIT) and `tools/mali/adapter-NOTICE.txt` travel inside the kit.
+- `.github/workflows/mali-driver-kit.yml` — builds the adapter (native gcc on an arm runner),
+  runs `build-driver-zips.sh`, checks the zip layout the importer expects (first
+  `libvulkan_*.so` = adapter, backend not named `libvulkan_*`), uploads `mali-driver-zips`.
+
+## First-frame diagnosis and chosen fixes (2026-10-21)
+
+Session 01 (56 min, 0.5.1-mali) proved why Steam mode never reaches READY — the whole chain in
+one run: zenithblue's RC3 reports no DRM nodes, so gamescope's renderer DRM-fd lookup fails
+(`wlserver: Failed to get DRM FD from renderer`, and our 0120 fallback finds no candidate node),
+XWayland's glamor falls back to software (`GBM Wayland interfaces not available`), the guest has
+**no DRI3**, and Steam's webhelper compositor window therefore fails `CreateOutputWindow:
+failed to acquire a gl context` 338 times across 298 webhelper restarts — no window ever maps,
+`frame.first` never fires, and the app waits forever at "Waiting for Steam's first frame".
+KDE renders because Plasma is Wayland-native; the aggravator is Valve's `steamwebhelper.sh`
+forcing `LIBGL_KOPPER_DISABLE=true`, which per
+[panvk-kbase-upstream-report.md](panvk-kbase-upstream-report.md) bug 2 breaks exactly this GLX
+path. `jdmg28`'s G615 kit already solved this with their adapter, field-proven with Steam UI
+screenshots — gated to "Mali-G615", hence never firing here.
+
+Chosen options (in order):
+
+1. **A — env probe, no rebuild**: `SDL_VIDEODRIVER=wayland` in
+   `Android/data/com.droiddeck.launcher/files/droiddeck-env` moves webhelper's compositor off
+   X11/GLX onto Wayland/EGL → zink → gamescope WSI, which already works in this session (ANGLE
+   and the desktop both present that way). Single variable, tested first.
+2. **B — DRM adapter kit** (this change): import the new
+   `mali-panvk-kbase-linux-icd.zip`, select *PanVK kbase (Mali, DRM adapter)*. Fixes the root
+   gate — gamescope gets its DRM fd, XWayland can start accelerated, GLX/DRI3 return.
+3. **C — deferred**: rebuild Zen's RC3 with `tools/panvk/patches/0001` (native rdev reporting,
+   supersedes the adapter) and `0002` (the `fn_addr` uint32 truncation that freezes Steam's
+   UI). RC3 still has that bug (`panvk_vX_cmd_draw.c:2073`, none of its 173 patches touch it),
+   so C is required for long sessions even once the first frame lands.
 
 ## Documentation (ours)
 
