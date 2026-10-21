@@ -616,6 +616,12 @@ class SessionService : Service() {
             // panvk-kbase's DRI3 present needs dma-buf export from kbase; SHM/WSI does not.
             guest.add("PANVK_KBASE_DRI3=0")
             guest.add("LIBGL_KOPPER_DISABLE=false")
+            // kbase cannot export dma-bufs at all, so Xwayland's glamor path and CEF's
+            // ANGLE/Vulkan present both end in "Error getting buffer" and no client
+            // commit ever reaches the compositor. Render both in software (SHM) until
+            // the driver's dma-buf export lands.
+            guest.add("XWAYLAND_NO_GLAMOR=1")
+            guest.add("steam_cef_gpu=0")
         }
         LinuxRuntime.vulkanIcd(this)?.let { guest.add("VK_ICD_FILENAMES=" + it.path) }
         val linuxDriverId = SessionPrefs.linuxDriver(this)
