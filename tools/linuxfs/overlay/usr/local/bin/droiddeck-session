@@ -81,6 +81,30 @@ run_gamescope() (
   exit "$compositor_status"
 )
 
+bl_install_cef_icd_wrapper() {
+  local dir hexe
+  dir=$1/steamrtarm64
+  hexe=$dir/steamwebhelper
+  [ -f "$hexe" ] || return 0
+  if [ -z "${BL_CEF_VK_DRIVER:-}" ]; then
+    if [ -f "$hexe.real" ] && ! head -c 4 "$hexe" 2>/dev/null | grep -q ELF; then
+      mv -f "$hexe.real" "$hexe" && chmod 755 "$hexe"
+    fi
+    return 0
+  fi
+  if [ ! -f "$hexe.real" ]; then
+    head -c 4 "$hexe" 2>/dev/null | grep -q ELF || return 0
+    mv -f "$hexe" "$hexe.real" || return 0
+  fi
+  printf '%s\n' '#!/bin/sh' \
+    'if [ -n "${BL_CEF_VK_DRIVER:-}" ] && [ -r "${BL_CEF_VK_DRIVER}" ]; then' \
+    '  export VK_DRIVER_FILES=$BL_CEF_VK_DRIVER VK_ICD_FILENAMES=$BL_CEF_VK_DRIVER' \
+    'fi' \
+    'exec "$(dirname "$0")/steamwebhelper.real" "$@"' > "$hexe" || return 0
+  chmod 755 "$hexe"
+  echo "== steam: CEF web helper using $BL_CEF_VK_DRIVER"
+}
+
 collect_steam_logs() {
   [ -n "${BL_DEBUG_DIR:-}" ] || return 0
   local steam_root=${XDG_DATA_HOME:-$HOME/.local/share}/Steam
@@ -388,6 +412,7 @@ case $mode in
       droiddeck-steam-install || steam_setup_failed $?
       step "Steam client ready"
       steam_root=$XDG_DATA_HOME/Steam
+      bl_install_cef_icd_wrapper "$steam_root"
       if [ -f "${BL_X64_HOME:-$HOME/.droiddeck-x64}/.local/share/Steam/local.vdf" ]; then
         droiddeck-steam-x64 --sync-login || true
       fi
