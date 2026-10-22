@@ -82,7 +82,9 @@ run_gamescope() (
 )
 
 bl_pin_cef_helper() {
-  local shim=$1/steamrtarm64/steamwebhelper.sh orig=$1/steamrtarm64/steamwebhelper.sh.droiddeck-orig
+  local dir=$1/steamrtarm64 shim=$1/steamrtarm64/steamwebhelper.sh
+  local orig=$1/steamrtarm64/steamwebhelper.sh.droiddeck-orig
+  local tmp=$1/steamrtarm64/steamwebhelper.sh.droiddeck-new want have pad
   if [ -z "${BL_CEF_VK_DRIVER:-}" ] || [ ! -r "${BL_CEF_VK_DRIVER}" ]; then
     [ -f "$orig" ] || return 0
     mv -f "$orig" "$shim" && chmod 755 "$shim"
@@ -90,18 +92,31 @@ bl_pin_cef_helper() {
   fi
   [ -f "$shim" ] || return 0
   [ -f "$orig" ] || cp -f "$shim" "$orig" || return 0
+  want=$(wc -c < "$orig" | tr -d ' ')
   {
     printf '%s\n' '#!/bin/bash'
     printf '%s\n' 'SCRIPTPATH="$(dirname -- "${BASH_SOURCE[0]}")"'
     printf '%s\n' 'cd "$SCRIPTPATH"'
     printf '%s\n' '[ -n "$DISPLAY" ] || export DISPLAY=:0'
+    printf '%s\n' 'export SDL_VIDEODRIVER=x11'
     printf 'export VK_DRIVER_FILES=%s VK_ICD_FILENAMES=%s\n' "$BL_CEF_VK_DRIVER" "$BL_CEF_VK_DRIVER"
     printf '%s\n' 'unset MESA_LOADER_DRIVER_OVERRIDE'
     printf '%s\n' 'export LIBGL_KOPPER_DISABLE=true'
     printf '%s\n' 'exec taskset 0x7c "$(pwd)/steamwebhelper" "$@" --use-gl=angle --use-angle=vulkan'
-  } > "$shim" || return 0
-  chmod 755 "$shim"
-  echo "== steam: CEF helper pinned to ${BL_CEF_VK_DRIVER} (ANGLE Vulkan)"
+  } > "$tmp" || return 0
+  have=$(wc -c < "$tmp" | tr -d ' ')
+  if [ "$have" -gt "$want" ]; then
+    rm -f "$tmp"
+    echo "== steam: CEF helper shim too long for verification ($have > $want)"
+    return 0
+  fi
+  pad=$((want - have - 3))
+  if [ "$pad" -ge 0 ]; then
+    { printf '# '; head -c "$pad" /dev/zero | tr '\0' ' '; printf '\n'; } >> "$tmp"
+  fi
+  chmod 755 "$tmp"
+  mv -f "$tmp" "$shim" || return 0
+  echo "== steam: CEF helper pinned to ${BL_CEF_VK_DRIVER} (ANGLE Vulkan, $want bytes)"
 }
 
 collect_steam_logs() {
