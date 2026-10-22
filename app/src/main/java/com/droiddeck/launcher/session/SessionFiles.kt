@@ -59,6 +59,7 @@ object SessionFiles {
             "usr/local/bin/droiddeck-steam-ui-scale" to "usr/local/bin/droiddeck-steam-ui-scale",
             "usr/local/bin/droiddeck-steam-language" to "usr/local/bin/droiddeck-steam-language",
             "usr/local/bin/droiddeck-steam-desktop-ui" to "usr/local/bin/droiddeck-steam-desktop-ui",
+            "usr/local/bin/droiddeck-steam-focus" to "usr/local/bin/droiddeck-steam-focus",
             "usr/local/bin/droiddeck-steam-library" to "usr/local/bin/droiddeck-steam-library",
             "usr/local/bin/droiddeck-seed-redists" to "usr/local/bin/droiddeck-seed-redists",
             "usr/local/bin/droiddeck-launcher-cores" to "usr/local/bin/droiddeck-launcher-cores",
