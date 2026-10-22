@@ -55,6 +55,7 @@ public final class PadBridge {
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private boolean open;
     private volatile boolean selectSteam;
+    private volatile boolean builtinPad = true;
     private TouchRoute touchRoute;
     private final PadState routedTouch = new PadState();
     private boolean systemGuidePressed;
@@ -108,6 +109,25 @@ public final class PadBridge {
 
     public void setExcluded(java.util.function.IntPredicate devices) {
         excluded = devices;
+    }
+
+    public synchronized void setBuiltinPad(boolean on) {
+        boolean changed = builtinPad != on;
+        builtinPad = on;
+        if (changed && !on) resetBuiltin();
+    }
+
+    private void resetBuiltin() {
+        routedTouch.clear();
+        systemGuidePressed = false;
+        systemQamPressed = false;
+        qamTapPressed = false;
+        qamChordActive = false;
+        chordButtonPressed = false;
+        qamChordGeneration++;
+        chordHandler.removeCallbacksAndMessages(null);
+        state.clear();
+        publish();
     }
 
     public synchronized boolean start() {
@@ -373,6 +393,7 @@ public final class PadBridge {
     }
 
     public synchronized void applyTouch(java.util.function.Consumer<PadState> mutation) {
+        if (!builtinPad) return;
         if (touchRoute != null && touchRoute.active()) {
             mutation.accept(routedTouch);
             touchRoute.accept(routedTouch);
@@ -412,6 +433,7 @@ public final class PadBridge {
     }
 
     public synchronized void setSystemButtons(boolean guidePressed, boolean qamPressed) {
+        if (!builtinPad) return;
         if (systemGuidePressed == guidePressed && systemQamPressed == qamPressed) return;
         boolean qamStarted = qamPressed && !systemQamPressed;
         systemGuidePressed = guidePressed;
@@ -443,6 +465,7 @@ public final class PadBridge {
     }
 
     public synchronized void triggerQam() {
+        if (!builtinPad) return;
         if (!nativeQam()) {
             startChord(PadState.A);
             return;
@@ -461,6 +484,7 @@ public final class PadBridge {
     }
 
     public synchronized void triggerSteamKeyboard() {
+        if (!builtinPad) return;
         startChord(PadState.X);
     }
 
@@ -632,6 +656,7 @@ public final class PadBridge {
     }
 
     private void publish() {
+        if (!builtinPad && !open && owners[0] == NO_CONTROLLER && partners[0] == NO_CONTROLLER) return;
         if (!open && !start()) {
             statDropped++;
             return;

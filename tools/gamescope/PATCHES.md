@@ -56,6 +56,13 @@ library list, before anything is published.
   own limiter slips such a frame by one refresh. The fixed-refresh branch now paces each window by
   time, as the VRR branch already did: its next frame goes out on the first refresh a capped interval
   after its last one, with half a refresh of tolerance so an on-time window keeps every Nth refresh.
+- `0116-hold-overlay-repaint-for-next-frame.patch` - this app: on a fixed-refresh output every
+  mangoapp commit asked for a repaint of its own, and mangoapp draws once per game frame just after
+  that frame was shown, so a 60 fps game on a 120 Hz panel was composited twice per frame - 75 frames
+  a second reached the screen, one in two 8 ms after the last with no new picture (Valheim, Stardew
+  Valley, Among Us). The VRR path already leaves such repaints to the next game frame; on a fixed
+  refresh output they now wait for it too, for at most `external_overlay_hold_cycles` refreshes (4,
+  so 30 fps at 120 Hz still merges), and are painted on their own after that.
 - `0120-tolerate-vulkan-devices-without-drm-nodes.patch` - this app: gamescope refused to init
   any Vulkan device that exposes no DRM primary/render node (`rendervulkan.cpp` returns false
   before anything else runs), which is every driver that talks to a Mali GPU through kbase rather
