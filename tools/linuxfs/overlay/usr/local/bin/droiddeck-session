@@ -81,6 +81,29 @@ run_gamescope() (
   exit "$compositor_status"
 )
 
+bl_pin_cef_helper() {
+  local shim=$1/steamrtarm64/steamwebhelper.sh orig=$1/steamrtarm64/steamwebhelper.sh.droiddeck-orig
+  if [ -z "${BL_CEF_VK_DRIVER:-}" ] || [ ! -r "${BL_CEF_VK_DRIVER}" ]; then
+    [ -f "$orig" ] || return 0
+    mv -f "$orig" "$shim" && chmod 755 "$shim"
+    return 0
+  fi
+  [ -f "$shim" ] || return 0
+  [ -f "$orig" ] || cp -f "$shim" "$orig" || return 0
+  {
+    printf '%s\n' '#!/bin/bash'
+    printf '%s\n' 'SCRIPTPATH="$(dirname -- "${BASH_SOURCE[0]}")"'
+    printf '%s\n' 'cd "$SCRIPTPATH"'
+    printf '%s\n' '[ -n "$DISPLAY" ] || export DISPLAY=:0'
+    printf 'export VK_DRIVER_FILES=%s VK_ICD_FILENAMES=%s\n' "$BL_CEF_VK_DRIVER" "$BL_CEF_VK_DRIVER"
+    printf '%s\n' 'unset MESA_LOADER_DRIVER_OVERRIDE'
+    printf '%s\n' 'export LIBGL_KOPPER_DISABLE=true'
+    printf '%s\n' 'exec taskset 0x7c "$(pwd)/steamwebhelper" "$@" --use-gl=angle --use-angle=vulkan'
+  } > "$shim" || return 0
+  chmod 755 "$shim"
+  echo "== steam: CEF helper pinned to ${BL_CEF_VK_DRIVER} (ANGLE Vulkan)"
+}
+
 collect_steam_logs() {
   [ -n "${BL_DEBUG_DIR:-}" ] || return 0
   local steam_root=${XDG_DATA_HOME:-$HOME/.local/share}/Steam
@@ -388,6 +411,7 @@ case $mode in
       droiddeck-steam-install || steam_setup_failed $?
       step "Steam client ready"
       steam_root=$XDG_DATA_HOME/Steam
+      bl_pin_cef_helper "$steam_root"
       if [ -f "${BL_X64_HOME:-$HOME/.droiddeck-x64}/.local/share/Steam/local.vdf" ]; then
         droiddeck-steam-x64 --sync-login || true
       fi
@@ -1146,14 +1170,8 @@ BUSCONF
         /usr/local/bin/droiddeck-steam-desktop-ui &
         desktop_ui_pid=$!
       fi
-      _bl_cef_env=()
-      if [ -n "${BL_CEF_VK_DRIVER:-}" ] && [ -r "${BL_CEF_VK_DRIVER}" ]; then
-        _bl_cef_env=(env -u MESA_LOADER_DRIVER_OVERRIDE \
-          VK_DRIVER_FILES="$BL_CEF_VK_DRIVER" VK_ICD_FILENAMES="$BL_CEF_VK_DRIVER")
-        echo "== steam: the client and its CEF helper use $BL_CEF_VK_DRIVER (GL falls back to software)"
-      fi
       steam_started=$SECONDS
-      "${_bl_cef_env[@]}" "${steam_client[@]}" "${_bl_ui[@]}" "${_bl_cdp[@]}" "${_bl_lang[@]}" -clientbeta "$steam_channel" \
+      "${steam_client[@]}" "${_bl_ui[@]}" "${_bl_cdp[@]}" "${_bl_lang[@]}" -clientbeta "$steam_channel" \
         -no-cef-sandbox -cef-ozone-platform=x11 "${_bl_cef[@]}" "$@"
       rc=$?
       steam_ran=$((SECONDS - steam_started))
