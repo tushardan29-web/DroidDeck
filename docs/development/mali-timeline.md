@@ -124,6 +124,33 @@ what each change is: [mali-fork-changes.md](mali-fork-changes.md).
   **0130** for the export refusal, and the evidence recorded in the options doc. Their five
   gamescope patches (0002/0009/0019/0020/0112) were already ours - same Armada lineage.
 
+## 2026-10-22 · CEF renders on lavapipe: Valve's shim is verified by size
+
+- Steam verifies the install tree at every start ("Verifying file sizes only") and re-downloads
+  whatever it dislikes. It named both files: `BVerifyInstalledFiles: steamrtarm64/steamwebhelper
+  is 293 bytes, expected 10326560`, `steamrtarm64/steamwebhelper.sh is 349 bytes, expected 398`,
+  then `Downloading update...`; afterwards both carried Valve's install mtime. Binary wrapping is
+  therefore dead, `chattr +i` is a no-op on this filesystem, and the only usable lever is a shim
+  of **exactly** the expected byte count.
+- A 398-byte `steamwebhelper.sh` survives verification with no update download and the helper keeps
+  our environment (`VK_DRIVER_FILES=/opt/lavapipe/icd.json`, `MESA_LOADER_DRIVER_OVERRIDE` unset).
+  In that state the browser is stable; on inherited panvk it dies at `CreateOutputWindow` and the
+  client relaunches it every ~10 s (new helper pid each cycle, login popup retried forever).
+- CEF then logs `SP DesktopLoginWindow_uid0-'Sign in to'` + `CBrowserComposerSystem::
+  CreateOutputWindow`, and the X window's pixmap holds real Steam pixels (`#1e1a19` background,
+  white text, 204 colours). gamescope focuses it ("Setting keyboard focus to: Sign in to Steam")
+  but the session surface stayed black until the window was cleared/re-raised once
+  (`XClearWindow` -> repaint -> damage -> composite); afterwards the full login page (QR code,
+  account fields) is on screen. Desktop UI is now visually working.
+- BPM is one step behind: `CCompositorGLThread::CreateOutputWindow ... Adding
+  SDL_WINDOW_TRANSPARENT` -> `Error: failed to acquire a gl context` -> `EGL_BAD_CONFIG`, with
+  `glx: failed to create drisw screen`, `ZINK: failed to choose pdev`, `egl: failed to create
+  dri2 screen`. CEF falls back to `CBrowserComposerSystem`, which creates and focuses "Steam Big
+  Picture Mode" with content in its pixmap, but the app stays on its splash. Setting
+  `SDL_VIDEODRIVER=x11` for the helper (instead of the session's wayland) changed nothing.
+- Shipped 0.5.8-mali (23): `bl_pin_cef_helper` writes through a temp file and `mv` (ETXTBSY-safe)
+  and pads the shim to the original's byte count.
+
 ## Open items
 
 1. **Re-test the three zips** on the next build (importer fix + mali env + gamescope 0130, new
