@@ -99,9 +99,9 @@ bl_pin_cef_helper() {
     printf '%s\n' 'cd "$SCRIPTPATH"'
     printf '%s\n' '[ -n "$DISPLAY" ] || export DISPLAY=:0'
     printf '%s\n' 'export SDL_VIDEODRIVER=x11'
+    printf '%s\n' 'export GALLIUM_DRIVER=llvmpipe'
     printf 'export VK_DRIVER_FILES=%s VK_ICD_FILENAMES=%s\n' "$BL_CEF_VK_DRIVER" "$BL_CEF_VK_DRIVER"
     printf '%s\n' 'unset MESA_LOADER_DRIVER_OVERRIDE'
-    printf '%s\n' 'export LIBGL_KOPPER_DISABLE=true'
     printf '%s\n' 'exec taskset 0x7c "$(pwd)/steamwebhelper" "$@" --use-gl=angle --use-angle=vulkan'
   } > "$tmp" || return 0
   have=$(wc -c < "$tmp" | tr -d ' ')
