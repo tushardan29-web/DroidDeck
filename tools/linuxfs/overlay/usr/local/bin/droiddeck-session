@@ -1186,10 +1186,19 @@ BUSCONF
         desktop_ui_pid=$!
       fi
       steam_started=$SECONDS
+      focus_pid=
+      if [ -x /usr/local/bin/droiddeck-steam-focus ] && [ "${BL_STEAM_FOCUS:-1}" = 1 ]; then
+        /usr/local/bin/droiddeck-steam-focus 2>&1 &
+        focus_pid=$!
+      fi
       "${steam_client[@]}" "${_bl_ui[@]}" "${_bl_cdp[@]}" "${_bl_lang[@]}" -clientbeta "$steam_channel" \
         -no-cef-sandbox -cef-ozone-platform=x11 "${_bl_cef[@]}" "$@"
       rc=$?
       steam_ran=$((SECONDS - steam_started))
+      if [ -n "$focus_pid" ]; then
+        kill "$focus_pid" 2>/dev/null || true
+        wait "$focus_pid" 2>/dev/null || true
+      fi
       if [ -n "$desktop_ui_pid" ]; then
         kill "$desktop_ui_pid" 2>/dev/null || true
         wait "$desktop_ui_pid" 2>/dev/null || true

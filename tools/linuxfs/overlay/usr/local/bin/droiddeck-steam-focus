@@ -1,0 +1,90 @@
+#!/usr/bin/env python3
+import ctypes
+import re
+import sys
+import time
+
+MATCH = re.compile(r"^(Sign in to Steam|Steam Big Picture Mode|Steam Deck|Steam)$")
+
+
+def open_display():
+    x = ctypes.CDLL("libX11.so.6")
+    x.XOpenDisplay.restype = ctypes.c_void_p
+    x.XOpenDisplay.argtypes = [ctypes.c_char_p]
+    d = x.XOpenDisplay(None)
+    return x, ctypes.c_void_p(d) if d else None
+
+
+def main():
+    x, d = open_display()
+    if not d:
+        print("droiddeck-steam-focus: no X display", flush=True)
+        return 1
+    x.XDefaultRootWindow.restype = ctypes.c_ulong
+    x.XDefaultRootWindow.argtypes = [ctypes.c_void_p]
+    root = x.XDefaultRootWindow(d)
+    x.XInternAtom.restype = ctypes.c_ulong
+    x.XInternAtom.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_int]
+    atom = x.XInternAtom(d, b"_NET_WM_NAME", 0)
+    x.XGetWindowProperty.argtypes = [
+        ctypes.c_void_p, ctypes.c_ulong, ctypes.c_ulong, ctypes.c_long, ctypes.c_long,
+        ctypes.c_int, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_int),
+        ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_void_p),
+    ]
+    x.XFree.argtypes = [ctypes.c_void_p]
+    x.XQueryTree.argtypes = [
+        ctypes.c_void_p, ctypes.c_ulong, ctypes.POINTER(ctypes.c_ulong), ctypes.POINTER(ctypes.c_ulong),
+        ctypes.POINTER(ctypes.POINTER(ctypes.c_ulong)), ctypes.POINTER(ctypes.c_uint),
+    ]
+    x.XSetInputFocus.argtypes = [ctypes.c_void_p, ctypes.c_ulong, ctypes.c_int, ctypes.c_ulong]
+    x.XFlush.argtypes = [ctypes.c_void_p]
+
+    def name(w):
+        t = ctypes.c_ulong()
+        f = ctypes.c_int()
+        n = ctypes.c_ulong()
+        a = ctypes.c_ulong()
+        p = ctypes.c_void_p()
+        if x.XGetWindowProperty(d, w, atom, 0, 128, 0, 0, ctypes.byref(t), ctypes.byref(f),
+                                ctypes.byref(n), ctypes.byref(a), ctypes.byref(p)):
+            return ""
+        if not p.value:
+            return ""
+        s = ctypes.string_at(p.value, n.value).decode("utf-8", "replace")
+        x.XFree(p)
+        return s
+
+    def toplevels(w, out):
+        r = ctypes.c_ulong()
+        pr = ctypes.c_ulong()
+        kids = ctypes.POINTER(ctypes.c_ulong)()
+        n = ctypes.c_uint()
+        if x.XQueryTree(d, w, ctypes.byref(r), ctypes.byref(pr), ctypes.byref(kids), ctypes.byref(n)):
+            for i in range(n.value):
+                out.append(kids[i])
+                toplevels(kids[i], out)
+
+    pinned = None
+    while True:
+        wins = []
+        toplevels(root, wins)
+        target = None
+        for w in wins:
+            nm = name(w)
+            if nm and MATCH.match(nm):
+                target = w
+                break
+        if target is not None:
+            x.XSetInputFocus(d, target, 2, 0)
+            x.XFlush(d)
+            if target != pinned:
+                print("droiddeck-steam-focus: pinning %s (0x%x)" % (name(target), target), flush=True)
+                pinned = target
+        time.sleep(0.2)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        sys.exit(0)
